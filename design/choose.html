@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>duckyPad Configurator — UI directions</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #151412; color: #f2eee6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px; }
+    header { max-width: 1440px; margin: 0 auto 28px; }
+    h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.04em; }
+    p { margin: 0; color: #bdb6aa; font-size: 15px; line-height: 1.5; }
+    main { display: grid; gap: 28px; max-width: 1440px; margin: auto; }
+    article { border: 1px solid #48433b; background: #201e1b; padding: 14px; }
+    .meta { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 2px 4px 14px; }
+    h2 { font-size: 17px; margin: 0; }
+    .tag { color: #c9c0b1; font-size: 13px; }
+    a { color: #f5cf69; font-size: 14px; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    .preview { position: relative; overflow: hidden; aspect-ratio: 1440 / 900; background: #080808; border: 1px solid #4d473e; }
+    iframe { width: 1440px; height: 900px; position: absolute; top: 0; left: 0; transform: scale(calc((100vw - 96px) / 1440)); transform-origin: top left; border: 0; pointer-events: none; }
+    @media (min-width: 1536px) { iframe { transform: scale(.93); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>duckyPad Configurator · 三個 UI 方向</h1>
+    <p>三版都保留完整功能與 4×5 實體 key grid；差別在產品的性格與資訊骨架。點「原尺寸開啟」後比較細節。</p>
+  </header>
+  <main>
+    <article>
+      <div class="meta"><div><h2>D1 · Warm Editorial</h2><div class="tag">暖紙手冊／Anthropic 方向</div></div><a href="demos/direction-1-warm-editorial.html" target="_blank">原尺寸開啟 ↗</a></div>
+      <div class="preview"><iframe src="demos/direction-1-warm-editorial.html" title="D1 Warm Editorial"></iframe></div>
+    </article>
+    <article>
+      <div class="meta"><div><h2>D2 · Pro DAW</h2><div class="tag">Ableton 式暗色工作站</div></div><a href="demos/direction-2-pro-daw.html" target="_blank">原尺寸開啟 ↗</a></div>
+      <div class="preview"><iframe src="demos/direction-2-pro-daw.html" title="D2 Pro DAW"></iframe></div>
+    </article>
+    <article>
+      <div class="meta"><div><h2>D3 · Teenage Engineering</h2><div class="tag">硬體面板／精密玩味</div></div><a href="demos/direction-3-teenage-eng.html" target="_blank">原尺寸開啟 ↗</a></div>
+      <div class="preview"><iframe src="demos/direction-3-teenage-eng.html" title="D3 Teenage Engineering"></iframe></div>
+    </article>
+  </main>
+</body>
+</html>

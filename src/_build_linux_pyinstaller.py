@@ -1,94 +1,163 @@
-from glob import glob
+from __future__ import annotations
+
 import os
-import PyInstaller.__main__
+from pathlib import Path
 import shutil
+import stat
+import subprocess
 import sys
+from urllib.request import urlretrieve
 
-if 'linux' not in sys.platform:
-    print("this script is for linux only!")
-    exit()
+import PyInstaller.__main__
 
-def clean(additional=None):
-	removethese = ['__pycache__','build','dist','*.spec']
-	if additional:
-		removethese.extend(additional)
-	for _object in removethese:
-		target=glob(os.path.join('.', _object))
-		for _target in target:
-			try:
-				if os.path.isdir(_target):
-					shutil.rmtree(_target)
-				else:
-					os.remove(_target)
-			except:
-				print(f'Error deleting {_target}.')
+if sys.platform != "linux":
+    raise SystemExit("this script is for Linux only")
 
-THIS_VERSION = None
-try:
-	mainfile = open('duckypad_config.py')
-	for line in mainfile:
-		if "THIS_VERSION_NUMBER =" in line:
-			THIS_VERSION = line.replace('\n', '').replace('\r', '').split("'")[-2]
-	mainfile.close()
-except Exception as e:
-	print('build_linux exception:', e)
-	exit()
+ROOT = Path.cwd()
+APP_NAME = "duckyPad-Configurator"
+LINUXDEPLOY_VERSION = "1-alpha-20251107-1"
+LINUXDEPLOY_URL = (
+    "https://github.com/linuxdeploy/linuxdeploy/releases/download/"
+    f"{LINUXDEPLOY_VERSION}/linuxdeploy-x86_64.AppImage"
+)
 
-if THIS_VERSION is None:
-	print('could not find version number!')
-	exit()
 
-exe_file_name = f"duckypad_config_{THIS_VERSION.replace('.', '_')}_linux_x86_64"
+def version() -> str:
+    for line in (ROOT / "duckypad_config.py").read_text(encoding="utf-8").splitlines():
+        if "THIS_VERSION_NUMBER =" in line:
+            return line.split("'")[-2]
+    raise RuntimeError("could not find THIS_VERSION_NUMBER")
 
-# --noconsole
-# (the output folder name is passed as additional so re-runs never hit a
-# stale directory at the os.rename step)
-clean(additional=['duckypad*.zip', exe_file_name])
 
-# uv-managed CPython builds (e.g. ~/.local/share/uv/python/...) bundle
-# Tcl/Tk 9 inside their own lib dir, which is NOT on the dynamic loader's
-# search path, so PyInstaller can't resolve libtcl*/libtk* from _tkinter.
-# Bundle the shared objects when found there so the frozen app runs
-# standalone; on a standard distro install the system Tcl/Tk resolves
-# normally and this adds nothing.
-pylib = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.executable))), 'lib')
-tcl_addbin = []
-for _lib in ('libtcl9.0.so', 'libtcl9tk9.0.so'):
-	_p = os.path.join(pylib, _lib)
-	if os.path.exists(_p):
-		tcl_addbin.append(f'--add-binary={_p}:.')
+def clean(paths: list[Path]) -> None:
+    for path in paths:
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+
+
+def linuxdeploy_path() -> Path:
+    configured = os.environ.get("LINUXDEPLOY")
+    if configured:
+        path = Path(configured).expanduser().resolve()
+        if not path.is_file():
+            raise RuntimeError(f"LINUXDEPLOY does not exist: {path}")
+        return path
+
+    path = ROOT / ".tools" / "linuxdeploy-x86_64.AppImage"
+    if not path.exists():
+        path.parent.mkdir(exist_ok=True)
+        print(f"Downloading linuxdeploy {LINUXDEPLOY_VERSION}")
+        urlretrieve(LINUXDEPLOY_URL, path)
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    return path
+
+
+def appimage_plugin(linuxdeploy: Path) -> Path:
+    extract_dir = ROOT / ".tools" / "linuxdeploy-root"
+    plugin = extract_dir / "squashfs-root" / "usr" / "bin" / "linuxdeploy-plugin-appimage"
+    if plugin.exists():
+        return plugin
+
+    clean([extract_dir])
+    extract_dir.mkdir(parents=True)
+    extraction_env = os.environ | {"APPIMAGE_EXTRACT_AND_RUN": "1"}
+    subprocess.run([str(linuxdeploy), "--appimage-extract"], cwd=extract_dir, env=extraction_env, check=True)
+    if not plugin.exists():
+        raise RuntimeError(f"linuxdeploy did not provide an AppImage output plugin: {plugin}")
+    return plugin
+
+
+this_version = version()
+bundle_name = f"duckyPad_Configurator_{this_version.replace('.', '_')}_linux_x86_64"
+app_dir = ROOT / "AppDir"
+final_appimage = ROOT / f"duckyPad-Configurator_{this_version}_x86_64.AppImage"
+clean([
+    ROOT / "build",
+    ROOT / "dist",
+    app_dir,
+    ROOT / "duckyPad_Configurator-x86_64.AppImage",
+    *ROOT.glob("duckyPad-Configurator_*_x86_64.AppImage"),
+])
+
+# uv-managed CPython keeps Tcl/Tk beside the interpreter rather than on the
+# dynamic loader path. Bundle those exact shared objects for the frozen GUI.
+pylib = Path(sys.executable).resolve().parents[1] / "lib"
+tcl_binaries = [
+    f"--add-binary={library}:."
+    for library in (pylib / "libtcl9.0.so", pylib / "libtcl9tk9.0.so")
+    if library.exists()
+]
 
 PyInstaller.__main__.run([
-	'duckypad_config.py',
-	'--collect-all=certifi',
-	'--onefile',
-	f'--name={exe_file_name}'
-] + tcl_addbin)
+    "duckypad_config.py",
+    "--noconfirm",
+    "--clean",
+    "--onedir",
+    f"--name={bundle_name}",
+    "--icon=_icon.ico",
+    "--add-data=_icon_512.png:.",
+    "--collect-all=certifi",
+] + tcl_binaries)
 
-output_folder_path = os.path.join(".", "dist")
-new_folder_path = exe_file_name
+bundle_dir = ROOT / "dist" / bundle_name
+app_dir.mkdir()
+lib_dir = app_dir / "usr" / "lib" / "duckypad-configurator"
+lib_dir.parent.mkdir(parents=True)
+shutil.copytree(bundle_dir, lib_dir)
 
-print(output_folder_path)
-print(new_folder_path)
+bin_dir = app_dir / "usr" / "bin"
+bin_dir.mkdir(parents=True)
+launcher = bin_dir / "duckyPad-Configurator"
+launcher.write_text(
+    "#!/bin/sh\n"
+    "HERE=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n"
+    f"exec \"$HERE/../lib/duckypad-configurator/{bundle_name}\" \"$@\"\n",
+    encoding="utf-8",
+)
+launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-os.rename(output_folder_path, new_folder_path)
+applications_dir = app_dir / "usr" / "share" / "applications"
+icons_dir = app_dir / "usr" / "share" / "icons" / "hicolor" / "512x512" / "apps"
+applications_dir.mkdir(parents=True)
+icons_dir.mkdir(parents=True)
+shutil.copy2(ROOT / "_icon_512.png", icons_dir / "duckyPad-Configurator.png")
+(applications_dir / "duckyPad-Configurator.desktop").write_text(
+    "[Desktop Entry]\n"
+    "Type=Application\n"
+    "Name=duckyPad Configurator\n"
+    "Comment=Configure duckyPad profiles and duckyScript keys\n"
+    "Exec=duckyPad-Configurator\n"
+    "Icon=duckyPad-Configurator\n"
+    "Categories=Utility;Settings;\n"
+    "Terminal=false\n",
+    encoding="utf-8",
+)
 
-readme_content = """
+desktop_file = applications_dir / "duckyPad-Configurator.desktop"
+icon_file = icons_dir / "duckyPad-Configurator.png"
+shutil.copy2(desktop_file, app_dir / desktop_file.name)
+shutil.copy2(icon_file, app_dir / icon_file.name)
+(app_dir / "AppRun").write_text(
+    "#!/bin/sh\nexec \"$APPDIR/usr/bin/duckyPad-Configurator\" \"$@\"\n",
+    encoding="utf-8",
+)
+(app_dir / "AppRun").chmod((app_dir / "AppRun").stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+(app_dir / "README.txt").write_text(
+    "duckyPad Configurator for Linux\n\n"
+    "Run this AppImage directly. If your distribution requires it, mark it executable first.\n"
+    "https://dekunukem.github.io/duckyPad-Pro/doc/linux_macos_notes.html\n",
+    encoding="utf-8",
+)
 
-Launching this app on Linux:
+linuxdeploy = linuxdeploy_path()
+plugin = appimage_plugin(linuxdeploy)
+appimage_env = os.environ | {"ARCH": "x86_64"}
+subprocess.run([str(plugin), "--appdir", str(app_dir)], env=appimage_env, check=True)
 
-https://dekunukem.github.io/duckyPad-Pro/doc/linux_macos_notes.html
-
-Full User Manuals:
-
-duckyPad.com
-
-"""
-
-with open(os.path.join(new_folder_path, "README.txt"), "w") as f:
-	f.write(readme_content)
-
-zip_file_name = exe_file_name
-shutil.make_archive(exe_file_name, 'zip', new_folder_path)
-
-clean()
+appimages = list(ROOT.glob("*.AppImage"))
+if len(appimages) != 1:
+    raise RuntimeError(f"expected one AppImage output, found: {appimages}")
+appimages[0].replace(final_appimage)
+print(final_appimage)

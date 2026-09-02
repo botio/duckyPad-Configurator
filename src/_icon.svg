@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">duckyPad Configurator</title>
+  <desc id="desc">A 3 by 5 duckyPad key matrix with a lower-right OLED and minus plus profile switches.</desc>
+  <rect width="512" height="512" rx="96" fill="#E8E4DA"/>
+  <rect x="48" y="48" width="416" height="416" rx="42" fill="#F4F1E9" stroke="#302D27" stroke-width="12"/>
+  <g fill="#D8D1C4" stroke="#302D27" stroke-width="8">
+    <rect x="82" y="82" width="82" height="58" rx="12"/><rect x="180" y="82" width="82" height="58" rx="12"/><rect x="278" y="82" width="82" height="58" rx="12"/>
+    <rect x="82" y="156" width="82" height="58" rx="12"/><rect x="180" y="156" width="82" height="58" rx="12"/><rect x="278" y="156" width="82" height="58" rx="12"/>
+    <rect x="82" y="230" width="82" height="58" rx="12"/><rect x="180" y="230" width="82" height="58" rx="12"/><rect x="278" y="230" width="82" height="58" rx="12"/>
+    <rect x="82" y="304" width="82" height="58" rx="12"/><rect x="180" y="304" width="82" height="58" rx="12"/><rect x="278" y="304" width="82" height="58" rx="12"/>
+    <rect x="82" y="378" width="82" height="58" rx="12"/><rect x="180" y="378" width="82" height="58" rx="12"/><rect x="278" y="378" width="82" height="58" rx="12"/>
+  </g>
+  <rect x="278" y="230" width="82" height="58" rx="12" fill="none" stroke="#F47721" stroke-width="14"/>
+  <rect x="380" y="270" width="52" height="72" rx="8" fill="#1F3328" stroke="#302D27" stroke-width="8"/>
+  <path d="M392 291h28M392 306h20M392 321h24" stroke="#B7F2C1" stroke-width="6" stroke-linecap="round"/>
+  <g fill="#D8D1C4" stroke="#302D27" stroke-width="7"><rect x="380" y="366" width="23" height="30" rx="6"/><rect x="409" y="366" width="23" height="30" rx="6"/></g>
+  <path d="M386 381h11M420 375v12M414 381h12" stroke="#302D27" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="104" cy="66" r="8" fill="#5DA773"/><circle cx="128" cy="66" r="8" fill="#618CA8"/><circle cx="152" cy="66" r="8" fill="#D99A16"/>
+</svg>

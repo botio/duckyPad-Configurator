@@ -205,7 +205,7 @@ Dark mode detect
 herdr integration: agent-state LEDs, key focus, plugin install & service management
 """
 
-THIS_VERSION_NUMBER = '4.1.0'
+THIS_VERSION_NUMBER = '4.1.1'
 
 THIS_DUCKYPAD = dp_type()
 
@@ -247,8 +247,8 @@ default_button_color = 'SystemButtonFace'
 if 'linux' in sys.platform:
     default_button_color = 'grey'
 
-MAIN_WINDOW_WIDTH = scaled_size(1070)
-MAIN_WINDOW_HEIGHT = scaled_size(605)
+MAIN_WINDOW_WIDTH = scaled_size(1450)
+MAIN_WINDOW_HEIGHT = scaled_size(850)
 PADDING = scaled_size(10)
 HEIGHT_ROOT_FOLDER_LF = scaled_size(50)
 INVALID_ROOT_FOLDER_STRING = "<---- Press to connect"
@@ -701,6 +701,8 @@ def update_profile_display():
     dont_repeat_checkbox.config(state=DISABLED)
     script_textbox.delete(1.0, 'end')
     check_syntax_label.config(text="", fg=color_green_both_light_and_dark_mode)
+    if "physical_oled" in globals():
+        physical_oled.config(text=f"P{index + 1}\n{profile_list[index].name[:10]}")
 
 def make_key_button_text_from_two_lines(line1, line2):
     if line1 is None:
@@ -1066,11 +1068,39 @@ def backup_button_click():
 def key_button_click_event(event):
     key_button_click(event.widget)
 
+def packaged_resource_path(filename):
+    base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, filename)
+
+
 root = Tk()
+app_icon_path = packaged_resource_path("_icon_512.png")
+if os.path.exists(app_icon_path):
+    app_icon = PhotoImage(file=app_icon_path)
+    root.iconphoto(True, app_icon)
 root.title("duckyPad Configurator v" + THIS_VERSION_NUMBER)
 root.geometry(str(MAIN_WINDOW_WIDTH) + "x" + str(MAIN_WINDOW_HEIGHT))
 root.resizable(width=FALSE, height=FALSE)
 profile_list = []
+d3_layout_active = False
+
+def set_script_panel_visible(is_visible):
+    if d3_layout_active:
+        if is_visible:
+            scripts_lf.grid()
+            empty_script_label.grid_remove()
+        else:
+            scripts_lf.grid_remove()
+            empty_script_label.grid()
+        return
+
+    if is_visible:
+        scripts_lf.place(x=scaled_size(660), y=scaled_size(60))
+        empty_script_label.place_forget()
+    else:
+        scripts_lf.place_forget()
+        empty_script_label.place(x=scaled_size(790), y=scaled_size(260))
+
 
 on_press_release_rb_var = IntVar()
 on_press_release_rb_var.set(0)
@@ -1097,8 +1127,7 @@ def key_button_click(button_widget):
     on_press_release_rb_var.set(0)
     thissss_key = profile_list[profile_index].keylist[selected_key]
     if thissss_key is not None:
-        scripts_lf.place(x=scaled_size(750), y=scaled_size(50))
-        empty_script_label.place_forget()
+        set_script_panel_visible(True)
         this_key_name = make_key_button_text_from_two_lines(thissss_key.name, thissss_key.name_line2)
         key_name_textbox.insert(1.0, this_key_name)
         script_textbox.delete(1.0, 'end')
@@ -1110,8 +1139,7 @@ def key_button_click(button_widget):
         else:
             on_release_rb.configure(fg=text_color_both_light_and_dark_mode)
     else:
-        scripts_lf.place_forget()
-        empty_script_label.place(x=scaled_size(800), y=scaled_size(200))
+        set_script_panel_visible(False)
         key_color_button.config(background=default_button_color)
         custom_key_color_checkbox.deselect()
         custom_key_color_checkbox.config(state=DISABLED)
@@ -1407,12 +1435,20 @@ script_instruction.place(x=scaled_size(5), y=scaled_size(80))
 script_instruction.bind("<Button-1>", open_dpp_page)
 
 def hide_relf():
-    re_tease_lf.place(x=scaled_size(590), y=scaled_size(50))
-    re_lf.place_forget()
+    if d3_layout_active:
+        re_tease_lf.grid(row=2, column=0, padx=(12, 6), pady=(0, 8), sticky="nsew")
+        re_lf.grid_remove()
+    else:
+        re_tease_lf.place(x=scaled_size(10), y=scaled_size(570))
+        re_lf.place_forget()
 
 def show_relf():
-    re_lf.place(x=scaled_size(590), y=scaled_size(50))
-    re_tease_lf.place_forget()
+    if d3_layout_active:
+        re_lf.grid(row=2, column=0, padx=(12, 6), pady=(0, 8), sticky="nsew")
+        re_tease_lf.grid_remove()
+    else:
+        re_lf.place(x=scaled_size(10), y=scaled_size(570))
+        re_tease_lf.place_forget()
 
 show_relf()
 root.update()
@@ -1557,6 +1593,26 @@ for x in range(MECH_OBSW_COUNT):
     this_button.bind("<ButtonRelease-1>", button_drag_release)
     key_button_list.append(this_button)
 
+def select_adjacent_profile(offset):
+    if len(profile_list) == 0:
+        return
+    selection = profile_lstbox.curselection()
+    current_index = selection[0] if selection else 0
+    next_index = (current_index + offset) % len(profile_list)
+    profile_lstbox.selection_clear(0, END)
+    profile_lstbox.selection_set(next_index)
+    profile_lstbox.activate(next_index)
+    profile_lstbox.event_generate('<<ListboxSelect>>')
+
+physical_oled = Label(keys_lf, text="P-\nNo profile", justify="left", anchor="w")
+physical_oled.place(x=scaled_size(305), y=scaled_size(205), width=scaled_size(108), height=scaled_size(58))
+
+profile_switch_minus_button = Button(keys_lf, text="-", command=lambda: select_adjacent_profile(-1))
+profile_switch_minus_button.place(x=scaled_size(305), y=scaled_size(280), width=scaled_size(49), height=scaled_size(28))
+
+profile_switch_plus_button = Button(keys_lf, text="+", command=lambda: select_adjacent_profile(1))
+profile_switch_plus_button.place(x=scaled_size(364), y=scaled_size(280), width=scaled_size(49), height=scaled_size(28))
+
 def update_keyname_info_string(info_string):
     if THIS_DUCKYPAD.device_type == THIS_DUCKYPAD.dp20:
         key_char_limit_label.config(text=key_char_limit_dp20)
@@ -1565,6 +1621,18 @@ def update_keyname_info_string(info_string):
 
 def place_obsw_buttons_portrait():
     update_keyname_info_string(key_char_limit_portrait)
+    if THIS_DUCKYPAD.device_type == THIS_DUCKYPAD.dp20:
+        for index in range(MECH_OBSW_COUNT):
+            key_button_list[index].place_forget()
+        for display_index, key_index in enumerate(dp20_to_dp24_lookup_0idx.values()):
+            row, column = divmod(display_index, 3)
+            key_button_list[key_index].place(
+                x=scaled_size(KEY_BUTTON_GAP + column * (KEY_BUTTON_WIDTH + KEY_BUTTON_GAP)),
+                y=scaled_size(KEY_BUTTON_HEADROOM + COL_GAP + row * (KEY_BUTTON_HEIGHT + COL_GAP)),
+                width=KEY_BUTTON_WIDTH,
+                height=KEY_BUTTON_HEIGHT,
+            )
+        return
     for index in range(MECH_OBSW_COUNT):
         key_button_list[index].place(x=key_button_xy_list[index][0], y=key_button_xy_list[index][1], width=KEY_BUTTON_WIDTH, height=KEY_BUTTON_HEIGHT)
 
@@ -1828,7 +1896,7 @@ script_box_font = get_monospace_font()
 char_width = font.Font(font=script_box_font).measure("0")
 script_textbox = Text(scripts_lf, relief='solid', font=script_box_font, borderwidth=1, padx=2, pady=2, spacing3=5, wrap="word", undo=True)
 script_textbox.configure(font=script_box_font, tabs=(char_width * 2))
-script_textbox.place(x=PADDING, y=scaled_size(50), width=scaled_size(285), height=scaled_size(360))
+script_textbox.place(x=scaled_size(12), y=scaled_size(50), width=scaled_size(402), height=scaled_size(560))
 root.update()
 script_textbox.bind("<<Modified>>", script_textbox_event)
 script_textbox.tag_configure("error", background="#ffff00")
@@ -1894,13 +1962,13 @@ def check_syntax(force=False):
     check_syntax_label.config(text=error_text, fg='red')
 
 check_syntax_label = Label(scripts_lf, text="")
-check_syntax_label.place(x=scaled_size(10), y=scaled_size(417))
+check_syntax_label.place(x=scaled_size(12), y=scaled_size(622))
 root.update()
 
 resources_lf = LabelFrame(root, text="Resources", width=scaled_size(516+214), height=scaled_size(70))
 resources_lf.place(x=scaled_size(10), y=scaled_size(525))
 
-updates_lf = LabelFrame(root, text="Updates", width=scaled_size(310), height=scaled_size(95))
+updates_lf = LabelFrame(root, text="herdr / Updates", width=scaled_size(250), height=scaled_size(410))
 updates_lf.place(x=scaled_size(750), y=scaled_size(525))
 
 pc_app_update_label = Label(master=updates_lf)
@@ -2114,8 +2182,7 @@ def exp_page_update():
     key_button_list[this_module_start+5].place(x=scaled_size(ch_button_x), y=scaled_size(chy_start + chy_step * 5 - 2), width=CH_BUTTON_WIDTH, height=25)
     key_button_list[this_module_start+6].place(x=scaled_size(ch_button_x), y=scaled_size(chy_start + chy_step * 6 - 2), width=CH_BUTTON_WIDTH, height=25)
     key_button_list[this_module_start+7].place(x=scaled_size(ch_button_x), y=scaled_size(chy_start + chy_step * 7 - 2), width=CH_BUTTON_WIDTH, height=25)
-    scripts_lf.place_forget()
-    empty_script_label.place(x=scaled_size(800), y=scaled_size(200))
+    set_script_panel_visible(False)
     key_name_textbox.delete('1.0', 'end')
     key_name_textbox.config(state=DISABLED)
     custom_key_color_checkbox.deselect()
@@ -2192,6 +2259,90 @@ for mmm in range(MAX_EXPANSION_MODULE_COUNT):
 
 current_selected_expansion_module = 0
 exp_page_update()
+
+def apply_d3_theme_and_layout():
+    global d3_layout_active
+
+    surface = "#E8E4DA"
+    panel = "#F4F1E9"
+    ink = "#302D27"
+    line = "#B8B1A3"
+    instrument = "#292720"
+    cream = "#F4F1E9"
+    orange = "#F47721"
+
+    root.configure(background=surface)
+    root.grid_columnconfigure(0, minsize=scaled_size(245))
+    root.grid_columnconfigure(1, minsize=scaled_size(430))
+    root.grid_columnconfigure(2, minsize=scaled_size(430))
+    root.grid_columnconfigure(3, minsize=scaled_size(255))
+    root.grid_rowconfigure(0, minsize=scaled_size(48))
+    root.grid_rowconfigure(1, minsize=scaled_size(410))
+    root.grid_rowconfigure(2, minsize=scaled_size(263))
+    root.grid_rowconfigure(3, minsize=scaled_size(70))
+
+    for widget in (root_folder_lf, profiles_lf, keys_lf, name_editor_lf, scripts_lf, resources_lf, updates_lf, expansion_lf, re_lf, re_tease_lf, empty_script_label):
+        widget.place_forget()
+
+    root_folder_lf.config(width=scaled_size(1416), height=scaled_size(48), background=panel, foreground=ink, highlightbackground=line)
+    profiles_lf.config(width=scaled_size(245), background=panel, foreground=ink, highlightbackground=line)
+    keys_lf.config(width=scaled_size(430), height=scaled_size(410), background=panel, foreground=ink, highlightbackground=line)
+    name_editor_lf.config(width=scaled_size(430), height=scaled_size(263), background=panel, foreground=ink, highlightbackground=line)
+    scripts_lf.config(width=scaled_size(430), height=scaled_size(681), background=instrument, foreground=cream, highlightbackground=line)
+    resources_lf.config(background=panel, foreground=ink, highlightbackground=line)
+    updates_lf.config(background=instrument, foreground=cream, highlightbackground=line)
+    expansion_lf.config(width=scaled_size(255), height=scaled_size(263), background=panel, foreground=ink, highlightbackground=line)
+    re_lf.config(width=scaled_size(245), height=scaled_size(263), background=panel, foreground=ink, highlightbackground=line)
+    re_tease_lf.config(width=scaled_size(245), height=scaled_size(263), background=panel, foreground=ink, highlightbackground=line)
+
+    root_folder_lf.grid(row=0, column=0, columnspan=4, padx=scaled_size(12), pady=(scaled_size(8), scaled_size(6)), sticky="ew")
+    profiles_lf.grid(row=1, column=0, rowspan=2, padx=(scaled_size(12), scaled_size(6)), pady=(0, scaled_size(8)), sticky="nsew")
+    keys_lf.grid(row=1, column=1, padx=scaled_size(6), pady=(0, scaled_size(8)), sticky="nsew")
+    name_editor_lf.grid(row=2, column=1, padx=scaled_size(6), pady=(0, scaled_size(8)), sticky="nsew")
+    scripts_lf.grid(row=1, column=2, rowspan=2, padx=scaled_size(6), pady=(0, scaled_size(8)), sticky="nsew")
+    updates_lf.grid(row=1, column=3, padx=(scaled_size(6), scaled_size(12)), pady=(0, scaled_size(8)), sticky="nsew")
+    expansion_lf.grid(row=2, column=3, padx=(scaled_size(6), scaled_size(12)), pady=(0, scaled_size(8)), sticky="nsew")
+    resources_lf.grid(row=3, column=0, columnspan=4, padx=scaled_size(12), pady=(0, scaled_size(8)), sticky="ew")
+
+    def apply_style(widget, background=panel, foreground=ink):
+        if isinstance(widget, (LabelFrame, Frame)):
+            widget.configure(background=background)
+            if isinstance(widget, LabelFrame):
+                widget.configure(foreground=foreground)
+        elif isinstance(widget, Button):
+            widget.configure(background=background, foreground=foreground, activebackground=line, activeforeground=ink, borderwidth=1, relief="solid", highlightthickness=0)
+        elif isinstance(widget, Label):
+            widget.configure(background=background, foreground=foreground)
+        elif isinstance(widget, Listbox):
+            widget.configure(background=cream, foreground=ink, selectbackground=orange, selectforeground=ink, highlightbackground=line, borderwidth=1)
+        elif isinstance(widget, (Checkbutton, Radiobutton)):
+            widget.configure(background=background, foreground=foreground, activebackground=background, activeforeground=foreground, selectcolor=panel)
+        elif isinstance(widget, Text):
+            widget.configure(background=cream, foreground=ink, insertbackground=ink, highlightbackground=line)
+        for child in widget.winfo_children():
+            apply_style(child, background, foreground)
+
+    apply_style(root)
+    apply_style(scripts_lf, instrument, cream)
+    script_textbox.configure(background="#1F1D18", foreground="#E8E4DA", insertbackground="#E8E4DA", highlightbackground=line)
+    check_syntax_label.configure(background=instrument)
+    apply_style(updates_lf, instrument, cream)
+    herdr_button.configure(background=orange, foreground=ink, activebackground="#D95F10")
+    physical_oled.configure(background="#1E3328", foreground="#B7F2C1", font=get_monospace_font(), borderwidth=2, relief="sunken")
+    profile_switch_minus_button.configure(background=panel, foreground=ink)
+    profile_switch_plus_button.configure(background=panel, foreground=ink)
+    save_button.configure(background=orange, foreground=ink, activebackground="#D95F10")
+
+    d3_layout_active = True
+    scripts_lf.grid_remove()
+    empty_script_label.configure(background=instrument, foreground=cream, text="Select a key to edit its duckyScript", font=get_monospace_font())
+    empty_script_label.grid(row=1, column=2, rowspan=2, padx=scaled_size(6), pady=(0, scaled_size(8)), sticky="nsew")
+    if THIS_DUCKYPAD.device_type == THIS_DUCKYPAD.dp20:
+        hide_relf()
+    else:
+        show_relf()
+
+apply_d3_theme_and_layout()
 root.update()
 
 # --------------------

@@ -7,3 +7,10 @@ src/duckypad_config_*.zip
 src/duckypad_config_*_linux*/
 src/build/
 src/dist/
+src/*.spec
+src/AppDir/
+src/.tools/
+src/squashfs-root/
+src/duckyPad-Configurator_*_x86_64.AppImage
+src/duckyPad-Configurator_*_macOS_ARM64.dmg
+src/dmg-root/

@@ -1,96 +1,141 @@
-from glob import glob
+from __future__ import annotations
+
 import os
-import PyInstaller.__main__
+from pathlib import Path
 import shutil
+import subprocess
 import sys
 
-if 'darwin' not in sys.platform:
-    print("this script is for macOS only!")
-    exit()
+import PyInstaller.__main__
 
-def clean(additional=None):
-	removethese = ['__pycache__','build','dist','*.spec']
-	if additional:
-		removethese.append(additional)
-	for _object in removethese:
-		target=glob(os.path.join('.', _object))
-		for _target in target:
-			try:
-				if os.path.isdir(_target):
-					shutil.rmtree(_target)
-				else:
-					os.remove(_target)
-			except:
-				print(f'Error deleting {_target}.')
+if sys.platform != "darwin":
+    raise SystemExit("this script is for macOS only")
 
-THIS_VERSION = None
-try:
-	mainfile = open('duckypad_config.py')
-	for line in mainfile:
-		if "THIS_VERSION_NUMBER =" in line:
-			THIS_VERSION = line.replace('\n', '').replace('\r', '').split("'")[-2]
-	mainfile.close()
-except Exception as e:
-	print('build_windows exception:', e)
-	exit()
-
-if THIS_VERSION is None:
-	print('could not find version number!')
-	exit()
-
-exe_file_name = f"duckypad_config_{THIS_VERSION.replace('.', '_')}_macOS_ARM"
-
-# --noconsole
-clean(additional='duckypad*.zip')
-PyInstaller.__main__.run(['duckypad_config.py','--icon=_icon.icns', '--onefile', f"--name={exe_file_name}"])
+ROOT = Path.cwd()
+APP_NAME = "duckyPad Configurator"
+BUNDLE_ID = "com.dekunukem.duckypad-configurator"
 
 
-output_folder_path = os.path.join('.', "dist")
-new_folder_path = exe_file_name
+def version() -> str:
+    for line in (ROOT / "duckypad_config.py").read_text(encoding="utf-8").splitlines():
+        if "THIS_VERSION_NUMBER =" in line:
+            return line.split("'")[-2]
+    raise RuntimeError("could not find THIS_VERSION_NUMBER")
 
-print(output_folder_path)
-print(new_folder_path)
 
-os.rename(output_folder_path, new_folder_path)
+def clean(paths: list[Path]) -> None:
+    for path in paths:
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
 
-sh_content = f"""
-echo
-echo ---------------
-echo Welcome to duckyPad Configurator!
-echo
-echo To Connect, Please Authenticate.
-echo
-echo If Blocked:
-echo "    Go to Settings > Privacy & Security"
-echo "    Scroll down, click \"Allow Anyway\""
-echo
-echo More info:
-echo 	https://dekunukem.github.io/duckyPad-Pro/doc/linux_macos_notes.html
-echo ---------------
-echo
-sudo ./{exe_file_name}
-"""
 
-with open(os.path.join(new_folder_path, "run.sh"), "w") as f:
-	f.write(sh_content)
-os.system(f"chmod a+x {os.path.join(new_folder_path, "run.sh")}")
+def build_icns(source: Path, output: Path) -> None:
+    iconset = ROOT / "build" / "duckyPad.iconset"
+    iconset.mkdir(parents=True)
+    for size in (16, 32, 128, 256, 512):
+        for suffix, pixels in (("", size), ("@2x", size * 2)):
+            subprocess.run(
+                ["sips", "-z", str(pixels), str(pixels), str(source), "--out", str(iconset / f"icon_{size}x{size}{suffix}.png")],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(output)], check=True)
 
-readme_content = """
 
-Launching this app on macOS:
+this_version = version()
+bundle_name = "duckyPad Configurator"
+dmg_name = ROOT / f"duckyPad-Configurator_{this_version}_macOS_ARM64.dmg"
+stage = ROOT / "dmg-root"
+clean([ROOT / "build", ROOT / "dist", stage, dmg_name])
 
-https://dekunukem.github.io/duckyPad-Pro/doc/linux_macos_notes.html
+icon_path = ROOT / "build" / "duckyPad.icns"
+build_icns(ROOT / "_icon_512.png", icon_path)
 
-Full User Manuals:
+PyInstaller.__main__.run([
+    "duckypad_config.py",
+    "--noconfirm",
+    "--clean",
+    "--windowed",
+    "--onedir",
+    f"--name={bundle_name}",
+    f"--icon={icon_path}",
+    f"--osx-bundle-identifier={BUNDLE_ID}",
+    "--add-data=_icon_512.png:.",
+    "--collect-all=certifi",
+])
 
-duckyPad.com
+app_bundle = ROOT / "dist" / f"{bundle_name}.app"
+if not app_bundle.is_dir():
+    raise RuntimeError(f"missing macOS app bundle: {app_bundle}")
+stage.mkdir()
+shutil.copytree(app_bundle, stage / app_bundle.name)
+os.symlink("/Applications", stage / "Applications")
+(stage / "README.txt").write_text(
+    "Drag duckyPad Configurator to Applications, then launch it.\n\n"
+    "https://dekunukem.github.io/duckyPad-Pro/doc/linux_macos_notes.html\n",
+    encoding="utf-8",
+)
+subprocess.run(
+    [
+        "hdiutil",
+        "create",
+        "-volname",
+        APP_NAME,
+        "-srcfolder",
+        str(stage),
+        "-ov",
+        "-format",
+        "UDZO",
+        str(dmg_name),
+    ],
+    check=True,
+)
+print(dmg_name)
+this_version = version()
+bundle_name = "duckyPad Configurator"
+icon_path = ROOT / "build" / "duckyPad.icns"
+clean([ROOT / "build", ROOT / "dist", stage, dmg_name])
+build_icns(ROOT / "_icon_512.png", icon_path)
 
-"""
+PyInstaller.__main__.run([
+    "duckypad_config.py",
+    "--noconfirm",
+    "--clean",
+    "--windowed",
+    "--onedir",
+    f"--name={bundle_name}",
+    f"--icon={icon_path}",
+    f"--osx-bundle-identifier={BUNDLE_ID}",
+    "--add-data=_icon_512.png:.",
+    "--collect-all=certifi",
+])
 
-with open(os.path.join(new_folder_path, "README.txt"), "w") as f:
-	f.write(readme_content)
-
-zip_file_name = exe_file_name
-shutil.make_archive(exe_file_name, 'zip', new_folder_path)
-
-clean()
+app_bundle = ROOT / "dist" / f"{bundle_name}.app"
+if not app_bundle.is_dir():
+    raise RuntimeError(f"missing macOS app bundle: {app_bundle}")
+stage.mkdir()
+shutil.copytree(app_bundle, stage / app_bundle.name)
+os.symlink("/Applications", stage / "Applications")
+(stage / "README.txt").write_text(
+    "Drag duckyPad Configurator to Applications, then launch it.\n\n"
+    "https://dekunukem.github.io/duckyPad-Pro/doc/linux_macos_notes.html\n",
+    encoding="utf-8",
+)
+subprocess.run(
+    [
+        "hdiutil",
+        "create",
+        "-volname",
+        APP_NAME,
+        "-srcfolder",
+        str(stage),
+        "-ov",
+        "-format",
+        "UDZO",
+        str(dmg_name),
+    ],
+    check=True,
+)
+print(dmg_name)
