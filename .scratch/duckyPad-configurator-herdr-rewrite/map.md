@@ -2,14 +2,14 @@
 
 ## Destination
 
-產出可實作的重寫規格與路線圖：新的 duckyPad Configurator 支援 herdr，讓可配置的一對一 agent／實體按鍵映射以 LED 動態效果顯示標準 agent 狀態，按鍵事件交由 herdr 將對應 agent 帶到前景；同時提供 macOS 與 Linux 的原生安裝、啟動與完整既有功能／設定遷移策略。
+讓 duckyPad Configurator（現有 Tkinter 版）成為 herdr 整合的入口：診斷 herdr/Rust/dfu 環境、引導安裝與更新既有 Rust `ducky-pad-bridge` plugin（`herdr plugin link` + user service）、提供 LED 色票與 slot 映射的設定檔、並對 EVO 裝置提供 `v3.1.0-herdr` 韌體的 guided 閃寫與回刷能力。
 
 ## Notes
 
 - Domain: duckyPad 裝置整合、herdr plugin、跨平台桌面應用與設定遷移。
 - 每個決策票必須先載入 `grilling` 與 `domain-modeling`；外部技術/API 事實使用 `research`。
 - 此地圖預設只釐清決策與規格，不承載目的地實作。
-- 已知方向：一對一可配置映射；標準狀態機搭配動態 LED；視窗焦點由 herdr 處理；macOS/Linux 原生應用入口；保留現有核心工作流並遷移設定。
+- 2026-09-02 範圍收斂（[09](issues/09-rebaseline-around-existing-herdr-plugin.md)）：Bridge 採用 duckyPad repo 既有 Rust plugin；韌體以 `duckypad_v3.1.0-herdr.dfu` 為準；不再全面重寫 GUI，改在現有 `src/duckypad_config.py` 上擴充 herdr 管理。
 
 ## Decisions so far
 
@@ -30,10 +30,12 @@
 
 - [原型化 agent／按鍵映射設定流程](issues/07-prototype-mapping-configuration-flow.md)：日常使用 A 的裝置畫布；Herdr Mode／workspace／capability 風險使用 C 的明確引導，原型保留在 `prototype/mapping-flow-ui`。
 
+
+- [收斂目的地：圍繞既有 herdr plugin 管理](issues/09-rebaseline-around-existing-herdr-plugin.md)：目的地改為「管理既有 Rust plugin + v3.1.0-herdr 韌體」；PySide6 全面重寫、20 FPS 動畫與自寫 Python Bridge 移出範圍。
 ## Not yet specified
 
 
 ## Out of scope
 
-- Configurator 自行以 macOS、X11 或 Wayland API 尋找並聚焦 herdr agent 視窗；焦點控制由 herdr 負責。
-- 此地圖不直接實作重寫版、herdr plugin 或 duckyPad 韌體變更；完成規格後另行排程實作。
+- 在 Configurator 內直接刷寫韌體之外的任何韌體工程；本次只透過 `dfu-util` 引導使用者閃寫已驗證的 `.dfu`。
+- PySide6 / Tauri 全面 GUI 重寫、20 FPS 動畫引擎、DMG/AppImage 簽章與 in-app updater：這些屬「Configurator 本身重寫」，不再是 herdr 支援的必要條件，另開 effort。

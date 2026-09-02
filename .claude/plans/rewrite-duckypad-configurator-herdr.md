@@ -1,6 +1,6 @@
-# Feature: 重寫 duckyPad Configurator 並整合 herdr
+# Feature: duckyPad Configurator 的 herdr 整合（已收斂範圍）
 
-本計畫以 Wayfinder 已鎖定的決策為準，不重開架構選擇。開始實作前，必須先取得有版本與 checksum 的 Herdr-capable Pro/EVO firmware release URL；目前只驗證到本機 sibling firmware source，沒有可交付的 release 對應。
+本計畫已被 2026-09-02 的範圍收斂取代（見 AMENDMENTS）。原始「PySide6 全面重寫 + 自寫 Python Bridge」方案不再執行；新方案是「讓既有 Tkinter Configurator 管理 duckyPad repo 的 Rust `ducky-pad-bridge` plugin + `v3.1.0-herdr` 韌體」。
 
 ## Feature Description
 
@@ -253,6 +253,10 @@
 - **Assumed**: direct-download DMG and AppImage are hosted as official release assets; release metadata signature format and signing-key custody must be specified before Phase 6.
 - **Assumed**: `pytest-qt` is acceptable for the new PySide6 UI test harness; no existing tests constrain this choice.
 
+
+## AMENDMENTS
+
+- **2026-09-02** — 範圍收斂：採用 duckyPad repo 既有 Rust `ducky-pad-bridge` plugin（`install.sh` → user service + `herdr plugin link`）與 `firmware/duckypad_v3.1.0-herdr.dfu`（SHA-256 `b1ea7431…18da96`，commit `e6738101`）作為可取得、已驗證的 herdr-capable 韌體。不再全面重寫 GUI（PySide6）、20 FPS 動畫、DMG/AppImage 簽章或自寫 Python Bridge；改為在 `src/duckypad_config.py` 上擴充「herdr 管理」：環境診斷、plugin 安裝/更新、LED 色票與 slot 映射設定、guided firmware flash。
 ## Confidence
 
 **7/10.** The code and protocol boundaries are mapped and product decisions are closed. Confidence is limited by the missing official firmware release contract, absence of existing automated tests, and the need for real Apple Silicon/Linux/Pro-EVO release smoke environments.
