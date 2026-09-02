@@ -1,0 +1,63 @@
+name: build-packages
+
+# Building a tag (e.g. `v4.1.0`) packages the Configurator on the matching
+# platform runners and publishes a GitHub release with the binaries.
+# PyInstaller does not cross-compile, so each OS is built on its own runner.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r src/requirements.txt
+      - name: Build
+        run: cd src && python _build_linux_pyinstaller.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: src/duckypad_config_*_linux*.zip
+
+  macos-arm:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install -r src/requirements.txt
+      - name: Build
+        run: cd src && python _build_mac_pyinstaller.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm
+          path: src/duckypad_config_*_macOS_ARM.zip
+
+  release:
+    needs: [linux, macos-arm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/linux/duckypad_config_*_linux*.zip
+            artifacts/macos-arm/duckypad_config_*_macOS_ARM.zip

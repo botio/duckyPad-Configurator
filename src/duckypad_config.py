@@ -199,9 +199,13 @@ fixed SSL certificate not found error
 4.0.3
 2026 01 30
 Dark mode detect
+
+4.1.0
+2026 09 02
+herdr integration: agent-state LEDs, key focus, plugin install & service management
 """
 
-THIS_VERSION_NUMBER = '4.0.2'
+THIS_VERSION_NUMBER = '4.1.0'
 
 THIS_DUCKYPAD = dp_type()
 

@@ -3,3 +3,7 @@ src/test.txt
 src/out.dsb
 src/.venv/
 src/__pycache__/
+src/duckypad_config_*.zip
+src/duckypad_config_*_linux*/
+src/build/
+src/dist/
