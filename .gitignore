@@ -1,3 +1,5 @@
 src/sample_*
 src/test.txt
 src/out.dsb
+src/.venv/
+src/__pycache__/

@@ -1896,7 +1896,7 @@ root.update()
 resources_lf = LabelFrame(root, text="Resources", width=scaled_size(516+214), height=scaled_size(70))
 resources_lf.place(x=scaled_size(10), y=scaled_size(525))
 
-updates_lf = LabelFrame(root, text="Updates", width=scaled_size(310), height=scaled_size(70))
+updates_lf = LabelFrame(root, text="Updates", width=scaled_size(310), height=scaled_size(95))
 updates_lf.place(x=scaled_size(750), y=scaled_size(525))
 
 pc_app_update_label = Label(master=updates_lf)
@@ -1913,9 +1913,77 @@ else:
     pc_app_update_label.config(text='This app (' + str(THIS_VERSION_NUMBER) + '): Unknown', fg='black', bg=default_button_color)
     pc_app_update_label.unbind("<Button-1>")
 
-dp_fw_update_label = Label(master=updates_lf, text="Firmware: Unknown")
-dp_fw_update_label.place(x=scaled_size(5), y=scaled_size(25))
+herdr_button = Button(master=updates_lf, text="herdr Integration…")
+herdr_button.place(x=scaled_size(140), y=scaled_size(25))
 
+def herdr_integration_click():
+    """Open a dialog to diagnose, install, configure and flash the herdr plugin."""
+    import herdr
+    from tkinter.scrolledtext import ScrolledText
+    dialog = Toplevel(root)
+    dialog.title("duckyPad × herdr")
+    dialog.geometry("720x480")
+
+    log_text = ScrolledText(dialog, wrap="word", height=16, width=86)
+    log_text.pack(fill="both", expand=True, padx=10, pady=(10, 5))
+
+    def refresh():
+        log_text.delete("1.0", "end")
+        log_text.insert("end", herdr.show_diagnostics())
+
+    refresh()
+
+    btn_frame = Frame(dialog)
+    btn_frame.pack(fill="x", padx=10, pady=5)
+
+    def run_install():
+        try:
+            result = herdr.HerdrIntegration().install(on_progress=lambda line: log_text.insert("end", line + "\n"))
+            log_text.insert("end", f"\n== installed: {result.service} ==\n")
+            refresh()
+        except Exception as exc:
+            messagebox.showerror("herdr install failed", str(exc))
+
+    def run_uninstall():
+        try:
+            msg = herdr.HerdrIntegration().uninstall()
+            log_text.insert("end", f"\n{msg}\n")
+            refresh()
+        except Exception as exc:
+            messagebox.showerror("herdr uninstall failed", str(exc))
+
+    def open_config():
+        if not herdr.HerdrIntegration().open_config_file():
+            messagebox.showerror("Open config", "Could not open the config file with a system editor.")
+
+    def copy_flash():
+        try:
+            cmd = herdr.HerdrIntegration().firmware_flash_command()
+        except Exception as exc:
+            messagebox.showerror("Firmware", str(exc))
+            return
+        if sys.platform == "darwin":
+            subprocess.run(["pbcopy"], input=cmd.encode(), check=False)
+        elif sys.platform.startswith("linux"):
+            subprocess.run(["xclip", "-selection", "clipboard"], input=cmd.encode(), check=False)
+        messagebox.showinfo(
+            "herdr firmware flash",
+            "Copy the command below, put the pad in DFU mode (hold the DFU button while plugging in), then run it:\n\n"
+            + cmd
+            + "\n\nRollback to stock 3.0.4 if needed:\n"
+            + (herdr.HerdrIntegration().stock_flash_command() or "(no stock image found)"),
+        )
+
+    Button(btn_frame, text="Refresh", command=refresh).pack(side="left", padx=2)
+    Button(btn_frame, text="Install / Upgrade Plugin", command=run_install).pack(side="left", padx=2)
+    Button(btn_frame, text="Stop & Uninstall Service", command=run_uninstall).pack(side="left", padx=2)
+    Button(btn_frame, text="Open Config (JSON)", command=open_config).pack(side="left", padx=2)
+    Button(btn_frame, text="Copy Firmware Flash Cmd", command=copy_flash).pack(side="left", padx=2)
+
+herdr_button.config(command=herdr_integration_click)
+
+dp_fw_update_label = Label(master=updates_lf, text="Firmware: Unknown")
+dp_fw_update_label.place(x=scaled_size(5), y=scaled_size(45))
 def import_profile_click():
     global profile_list
     messagebox.showinfo("Import", "Select a duckyPad_Profile.zip file")
