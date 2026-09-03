@@ -37,6 +37,31 @@ def _hidapi_global_error():
         return None
     return result
 
+
+def _ensure_hid_listen_access():
+    """On macOS, request TCC "Input Monitoring" (ListenEvent) access.
+
+    Opening a keyboard-class HID device (the duckyPad) is gated by the
+    Input Monitoring privacy permission. Declaring
+    NSInputMonitoringUsageDescription lets macOS recognize the intent, but
+    the app should also actively register for it via IOHIDRequestAccess()
+    so the system can prompt for and track the grant. Returns True if
+    access is already permitted, False if it still needs to be granted,
+    or None if the call was unavailable. Never fatal: if this fails the
+    subsequent open simply fails with the IOKit code as before.
+    """
+    if not sys.platform.startswith('darwin'):
+        return None
+    try:
+        iokit = ctypes.CDLL("/System/Library/Frameworks/IOKit.framework/IOKit")
+        kIOHIDRequestTypeListenEvent = 1
+        request_access = iokit.IOHIDRequestAccess
+        request_access.restype = ctypes.c_bool
+        request_access.argtypes = [ctypes.c_int]
+        return bool(request_access(kIOHIDRequestTypeListenEvent))
+    except Exception:
+        return None
+
 dp20_pid = 0xd11c
 dpp_pid = 0xd11d
 all_dp_pids = [dp20_pid, dpp_pid]
@@ -79,6 +104,7 @@ def make_dp_info_dict(hid_msg, hid_path):
 
 def probe_duckypad_paths(dp_path_list):
     """Return responsive duckyPads and per-path HID failures without losing successes."""
+    _ensure_hid_listen_access()
     dp_info_list = []
     errors = []
     pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()

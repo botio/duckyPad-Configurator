@@ -100,12 +100,17 @@ def main() -> None:
             check(_got is None, "real hidapi global-error reader filters the Linux placeholder")
         else:
             check(_got is None or isinstance(_got, str), "real hidapi global-error reader is safe")
+        _listen = hid_common._ensure_hid_listen_access()
+        if sys.platform.startswith("linux"):
+            check(_listen is None, "hid listen-access request is a no-op off macOS")
+        else:
+            check(_listen is None or isinstance(_listen, bool), "hid listen-access request is safe")
         sidecar = subprocess.Popen([sys.executable, str(ROOT / "core" / "sidecar.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         assert sidecar.stdin and sidecar.stdout
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.5", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.6", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 

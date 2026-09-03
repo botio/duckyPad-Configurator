@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.5"
+APP_VERSION = "5.0.6"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
