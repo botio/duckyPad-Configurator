@@ -8,6 +8,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import core.service as service_module
 from core.service import CoreError, CoreService
 
 
@@ -54,12 +55,22 @@ def main() -> None:
         check(service.headers_get()["user_header"] == ["// updated"], "headers persisted in session")
         status = service.herdr_status()
         check("ts" in status, "herdr status is non-fatal without device")
+        original_paths = service_module.hid_op.get_duckypad_path
+        original_probe = service_module.hid_op.probe_duckypad_paths
+        try:
+            service_module.hid_op.get_duckypad_path = lambda: [b"/dev/mock-duckypad"]
+            service_module.hid_op.probe_duckypad_paths = lambda _paths: ([], ["OSError: access denied"])
+            scan = CoreService().device_scan()
+            check(scan["compatible_hid_paths"] == 1 and scan["detail"] == "OSError: access denied", "scan reports HID probe failure")
+        finally:
+            service_module.hid_op.get_duckypad_path = original_paths
+            service_module.hid_op.probe_duckypad_paths = original_probe
         sidecar = subprocess.Popen([sys.executable, str(ROOT / "core" / "sidecar.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         assert sidecar.stdin and sidecar.stdout
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.0", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.2", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 

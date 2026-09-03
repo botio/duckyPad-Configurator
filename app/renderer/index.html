@@ -22,6 +22,13 @@
       <footer class="panel resources"><span>RESOURCES</span><button id="save-button" class="accent">SAVE</button><button id="backup-button">BACKUP</button><button id="export-button">EXPORT</button><button id="import-button">IMPORT</button><button id="open-folder">OPEN FOLDER</button><button id="manual-link">MANUAL ↗</button></footer>
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
+    <dialog id="profile-dialog" class="profile-dialog">
+      <form method="dialog">
+        <h2 id="profile-dialog-title">New profile</h2>
+        <label>PROFILE NAME<input id="profile-dialog-name" maxlength="31" required autocomplete="off"></label>
+        <div class="button-row"><button value="cancel">CANCEL</button><button id="profile-dialog-confirm" class="accent" value="accept">CREATE</button></div>
+      </form>
+    </dialog>
   </main>
   <script src="app.js"></script>
 </body>

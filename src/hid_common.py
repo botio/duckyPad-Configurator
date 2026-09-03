@@ -42,33 +42,46 @@ def make_dp_info_dict(hid_msg, hid_path):
     this_dict['hid_msg'] = hid_msg
     return this_dict
 
-def get_all_dp_info(dp_path_list):
+def probe_duckypad_paths(dp_path_list):
+    """Return responsive duckyPads and per-path HID failures without losing successes."""
     dp_info_list = []
+    errors = []
     pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
     for this_path in dp_path_list:
-        # print(this_path)
-        myh = hid.device()
-        myh.open_path(this_path)
-        myh.write(pc_to_duckypad_buf)
-        result = myh.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
-        myh.close()
-        # print(result)
-        if result[2] != HID_RESPONSE_OK:
-            continue
-        this_dict = make_dp_info_dict(result, this_path)
-        dp_info_list.append(this_dict)
+        myh = None
+        try:
+            myh = hid.device()
+            myh.open_path(this_path)
+            myh.write(pc_to_duckypad_buf)
+            result = myh.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
+            if len(result) < 3:
+                raise OSError("duckyPad did not return a complete HID response")
+            if result[2] != HID_RESPONSE_OK:
+                raise OSError(f"duckyPad rejected the HID probe (status {result[2]})")
+            dp_info_list.append(make_dp_info_dict(result, this_path))
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {exc}")
+        finally:
+            if myh is not None:
+                try:
+                    myh.close()
+                except Exception:
+                    pass
+    return dp_info_list, errors
+
+
+def get_all_dp_info(dp_path_list):
+    dp_info_list, _errors = probe_duckypad_paths(dp_path_list)
     return dp_info_list
 
 def scan_duckypads():
     all_dp_paths = get_duckypad_path()
     if len(all_dp_paths) == 0:
         return []
-    try:
-        dp_info_list = get_all_dp_info(all_dp_paths)
-    except Exception:
+    dp_info_list, errors = probe_duckypad_paths(all_dp_paths)
+    if not dp_info_list and errors:
         return None
-    dp_info_list = sorted(dp_info_list, key=lambda tup: tup['serial'])
-    return dp_info_list
+    return sorted(dp_info_list, key=lambda tup: tup['serial'])
 
 def get_empty_pc_to_duckypad_buf():
     ptd_buf = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE

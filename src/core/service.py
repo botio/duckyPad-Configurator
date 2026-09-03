@@ -39,8 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-
-APP_VERSION = "5.0.0"
+APP_VERSION = "5.0.2"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -208,13 +207,18 @@ class CoreService:
 
     def device_scan(self) -> dict[str, Any]:
         try:
-            found = hid_op.scan_duckypads()
+            paths = hid_op.get_duckypad_path()
         except (ImportError, OSError) as exc:
             return _result(devices=[], hint="hid_unavailable", detail=str(exc))
-        if found is None:
+        if not paths:
+            return _result(devices=[], hint="not_found")
+        found, errors = hid_op.probe_duckypad_paths(paths)
+        if found:
+            return _result(devices=[self._device_summary(device) for device in found], hint=None, probe_errors=errors or None)
+        if errors:
             hint = "permissions" if sys.platform == "darwin" else "sudo" if sys.platform.startswith("linux") else "permissions"
-            return _result(devices=[], hint=hint)
-        return _result(devices=[self._device_summary(device) for device in found], hint="not_found" if not found else None)
+            return _result(devices=[], hint=hint, detail=errors[0], compatible_hid_paths=len(paths))
+        return _result(devices=[], hint="unresponsive", compatible_hid_paths=len(paths))
 
     def device_connect(self, id: str) -> dict[str, Any]:
         try:

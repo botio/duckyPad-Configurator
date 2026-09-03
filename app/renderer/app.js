@@ -130,16 +130,34 @@
   }
   async function connectScan() {
     const result = await call('device/scan'); state.devices = result.devices || []; const list = $('device-list'); list.replaceChildren();
-    if (!state.devices.length) { list.textContent = result.hint === 'sudo' ? 'Linux needs permission to read the HID device. Check udev rules or run with the required device access.' : 'No duckyPad found. Check USB, cable, and Bluetooth mode.'; return; }
+    if (!state.devices.length) {
+      const messages = {
+        hid_unavailable: 'The bundled HID runtime could not start.',
+        permissions: 'A compatible duckyPad was found, but macOS could not open its HID interface. Reconnect the pad, approve any USB accessory prompt, then retry.',
+        unresponsive: 'A compatible duckyPad was found but did not answer its HID probe. Disconnect and reconnect it, then retry.',
+        sudo: 'Linux needs permission to read the HID device. Check udev rules or run with the required device access.',
+        not_found: 'No compatible duckyPad is visible to macOS. Check USB, cable, and Bluetooth mode.',
+      };
+      list.textContent = [messages[result.hint] || 'No duckyPad found.', result.detail].filter(Boolean).join('\n');
+      return;
+    }
     for (const device of state.devices) { const button = document.createElement('button'); button.textContent = `${device.model.toUpperCase()} · ${device.serial} · FW ${device.fw_version}`; button.onclick = async () => { await call('device/connect', { id: device.id }); await refresh(); }; list.append(button); }
   }
   async function connectFolder(model) { const folder = await core.pickFolder(); if (!folder) return; await call('device/connect_folder', { path: folder, model }); await refresh(); }
+  function requestProfileName(title, initialValue = '', action = 'CREATE') {
+    return new Promise((resolve) => {
+      const dialog = $('profile-dialog'); const input = $('profile-dialog-name');
+      $('profile-dialog-title').textContent = title; $('profile-dialog-confirm').textContent = action; input.value = initialValue;
+      dialog.onclose = () => resolve(dialog.returnValue === 'accept' ? input.value.trim() : null);
+      dialog.showModal(); input.focus(); input.select();
+    });
+  }
   function bind() {
     $('connect-button').onclick = () => { show('no-device'); connectScan(); };
     $('scan-button').onclick = connectScan; $('folder-button').onclick = () => $('model-picker').classList.remove('hidden');
     document.querySelectorAll('[data-model]').forEach((button) => button.onclick = () => connectFolder(button.dataset.model));
-    $('new-profile').onclick = async () => { const name = prompt('Profile name'); if (name) await profileAction('profiles/create', { name }); };
-    $('profile-rename').onclick = async () => { if (!state.profile) return; const new_name = prompt('New name', state.profile.name); if (new_name) await profileAction('profiles/rename', { name: state.profile.name, new_name }); };
+    $('new-profile').onclick = async () => { const name = await requestProfileName('New profile'); if (name) await profileAction('profiles/create', { name }); };
+    $('profile-rename').onclick = async () => { if (!state.profile) return; const new_name = await requestProfileName('Rename profile', state.profile.name, 'RENAME'); if (new_name) await profileAction('profiles/rename', { name: state.profile.name, new_name }); };
     $('profile-duplicate').onclick = () => state.profile && profileAction('profiles/duplicate', { name: state.profile.name });
     $('profile-delete').onclick = () => state.profile && confirm(`Delete ${state.profile.name}?`) && profileAction('profiles/delete', { name: state.profile.name });
     $('profile-up').onclick = () => state.profile && profileAction('profiles/move', { name: state.profile.name, direction: 'up' });
