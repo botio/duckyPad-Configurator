@@ -110,7 +110,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.8", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.9", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 

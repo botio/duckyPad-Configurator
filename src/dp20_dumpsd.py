@@ -66,6 +66,83 @@ def hid_dump_file(sd_file_path, hid_obj):
     print()
     return bytes(all_data)
 
+DP_VENDOR_ID = 0x0483
+DP_PIDS = (0xd11c, 0xd11d)   # duckyPad OG (20) and Pro (24)
+
+def _find_dp20_path(prefer_path, timeout_ms=12000):
+    """After a SW_RESET the duckyPad reboots and re-enumerates; its HID path may
+    change. Poll hid.enumerate() for a duckyPad (vendor 0x0483 + a DP PID) and
+    return its path, preferring prefer_path if it still appears. Returns None
+    if the pad does not re-appear within the timeout."""
+    deadline = millis() + timeout_ms
+    while millis() < deadline:
+        found = []
+        try:
+            for dev in hid.enumerate():
+                if dev.get("vendor_id") == DP_VENDOR_ID and dev.get("product_id") in DP_PIDS:
+                    p = dev.get("path")
+                    if p:
+                        found.append(p)
+        except Exception:
+            pass
+        if found:
+            if prefer_path in found:
+                return prefer_path
+            return found[0]
+        time.sleep(0.2)
+    return None
+
+def _sw_reset_and_reopen(dp_path):
+    """Reboot the duckyPad via SW_RESET so its boot-time scan_profiles() re-runs
+    and repopulates profile_name_list, then re-open it.
+
+    The firmware's DUMP_SD handler calls find_first_profile() and hard-faults
+    ("Fatal Error:10", all keys lit, infinite hang, no HID response) when
+    profile_name_list is empty. That list is only written during main()'s boot
+    (mount_sd -> ensure_new_profile_format -> scan_profiles), while the custom-HID
+    interface is live before the scan completes. If DUMP_SD arrives before the
+    scan finishes, the pad bricks itself. Rebooting first guarantees a fresh,
+    complete scan before the dump.
+
+    Returns the reopened hid device, or None if the flow failed.
+    """
+    sw_buf = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE
+    sw_buf[0] = 5                    # HID Usage ID (OUT report)
+    sw_buf[1] = 0
+    sw_buf[2] = HID_COMMAND_SW_RESET  # 20
+    dp = hid.device()
+    try:
+        dp.open_path(dp_path)
+    except Exception as exc:
+        print("pre-scan: open failed:", exc)
+        return None
+    try:
+        dp.write(sw_buf)
+        try:
+            ack = dp.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
+            print("pre-scan: SW_RESET ack:", list(ack[:4]) if ack else None)
+        except Exception as exc:
+            print("pre-scan: read ack (pad mid-reset):", exc)
+    finally:
+        try:
+            dp.close()
+        except Exception:
+            pass
+    new_path = _find_dp20_path(dp_path)
+    if new_path is None:
+        print("pre-scan: duckyPad did not re-enumerate after SW_RESET")
+        return None
+    # Give the rebooted pad time to finish its boot-time profile scan
+    # (f_mount + ensure_new_profile_format + scan_profiles) before DUMP_SD.
+    print("pre-scan: re-enumerated at", new_path, "- waiting for boot to settle")
+    time.sleep(5)
+    try:
+        dp.open_path(new_path)
+    except Exception as exc:
+        print("pre-scan: re-open failed:", exc)
+        return None
+    return dp
+
 def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_obj=None):
     current_dir = None
     pc_to_duckypad_buf = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE
@@ -77,8 +154,14 @@ def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_o
     backup_md5_dict = scan_md5.get_md5_dict(backup_dir_path)
     md5_miss_list = []
 
-    dp20_h = hid.device()
-    dp20_h.open_path(dp_path)
+    # Ensure the pad has completed its boot-time profile scan before the dump:
+    # reboot it via SW_RESET (re-runs scan_profiles, repopulating
+    # profile_name_list), wait for it to re-enumerate and settle, then re-open.
+    # If the pre-scan flow fails, fall back to a plain open (legacy behavior).
+    dp20_h = _sw_reset_and_reopen(dp_path)
+    if dp20_h is None:
+        dp20_h = hid.device()
+        dp20_h.open_path(dp_path)
 
     while 1:
         dp20_h.write(pc_to_duckypad_buf)
