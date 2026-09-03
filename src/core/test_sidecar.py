@@ -85,12 +85,27 @@ def main() -> None:
         finally:
             hid_common.hid = original_hid_module
             hid_common._hidapi_global_error = original_hidapi_error
+        _dev = hid_common.hid.device()
+        try:
+            _dev.open_path(b"/dev/no-such-duckypad-xyz")
+        except Exception:
+            pass
+        finally:
+            try:
+                _dev.close()
+            except Exception:
+                pass
+        _got = hid_common._hidapi_global_error()
+        if sys.platform.startswith("linux"):
+            check(_got is None, "real hidapi global-error reader filters the Linux placeholder")
+        else:
+            check(_got is None or isinstance(_got, str), "real hidapi global-error reader is safe")
         sidecar = subprocess.Popen([sys.executable, str(ROOT / "core" / "sidecar.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         assert sidecar.stdin and sidecar.stdout
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.3", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.4", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 

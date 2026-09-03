@@ -9,36 +9,33 @@ _HIDAPI_LIB = None
 def _hidapi_global_error():
     """Return the last global error recorded by libhidapi, or None.
 
-    hidapi stores a global error string when calls such as hid_open_path()
-    fail, but the Python binding never reads it. We reach it through the
-    native library the hid module was built against, so the real IOKit
-    code / message (e.g. kIOReturnDenied) is no longer silently dropped.
+    hidapi records a global error string when calls such as hid_open_path()
+    fail (on macOS this carries the IOKit code/message, e.g. kIOReturnDenied),
+    but the Python binding never reads it. The trezor/cython-hidapi wheel
+    statically compiles the hidapi C code into the ``hid`` extension module
+    itself (there is no separate ``hidapi.so``), so we dlopen that module's
+    own file and call ``hid_error(NULL)`` to retrieve the string.
     """
     global _HIDAPI_LIB
     try:
         if _HIDAPI_LIB is None:
-            lib_dir = os.path.dirname(os.path.abspath(hid.__file__))
-            candidates = [
-                os.path.join(lib_dir, 'hidapi.so'),
-                os.path.join(lib_dir, 'libhidapi.so'),
-            ]
-            for cand in candidates:
-                if os.path.exists(cand):
-                    _HIDAPI_LIB = ctypes.CDLL(cand)
-                    break
-            if _HIDAPI_LIB is None:
-                return None
+            _HIDAPI_LIB = ctypes.CDLL(os.path.abspath(hid.__file__))
         hid_error = _HIDAPI_LIB.hid_error
-        hid_error.restype = ctypes.c_wchar_p if sys.platform == 'darwin' else ctypes.c_char_p
+        # hid_error returns a const wchar_t* on every platform.
+        hid_error.restype = ctypes.c_wchar_p
         hid_error.argtypes = [ctypes.c_void_p]
         result = hid_error(None)
-        if result is None:
-            return None
-        if isinstance(result, bytes):
-            return result.decode('utf-8', 'replace')
-        return result
     except Exception:
         return None
+    if result is None:
+        return None
+    if isinstance(result, bytes):
+        result = result.decode('utf-8', 'replace')
+    # These placeholders carry no diagnostic value (the Linux backend does not
+    # implement hid_error; a clean state reports "Success").
+    if not result or result in ('Success', 'hid_error is not implemented yet'):
+        return None
+    return result
 
 dp20_pid = 0xd11c
 dpp_pid = 0xd11d
