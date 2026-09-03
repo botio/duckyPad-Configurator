@@ -7,7 +7,7 @@ Desktop configurator for [duckyPad Macropads](https://duckypad.com).
 Download the platform package from the [latest release](https://github.com/botio/duckyPad-Configurator/releases/latest):
 
 * **Linux:** `duckyPad-Configurator-*-linux-x86_64.AppImage`
-* **macOS:** separate Apple Silicon and Intel `.dmg` files
+* **macOS:** Apple Silicon `.dmg`
 * **Windows:** x64 NSIS installer
 
 Version 5 uses an Electron desktop shell with a bundled Python device core. It works without a system Python installation and retains duckyPad 2020 HID, duckyPad Pro storage, compiler, profile, backup, import/export, update, and herdr integrations.
