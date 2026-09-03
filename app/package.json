@@ -1,7 +1,7 @@
 {
   "name": "duckypad-configurator",
   "productName": "duckyPad Configurator",
-  "version": "5.0.4",
+  "version": "5.0.5",
   "description": "duckyPad Configurator Electron UI with Python hardware core",
   "main": "main/main.js",
   "author": "dekuNukem",

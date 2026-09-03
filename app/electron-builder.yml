@@ -15,6 +15,8 @@ mac:
   category: public.app-category.developer-tools
   icon: resources/icon.icns
   identity: null
+  extendInfo:
+    NSInputMonitoringUsageDescription: "duckyPad Configurator opens your duckyPad (a USB HID device) to read its status and write profile configuration."
   target:
     - target: dmg
       arch: [arm64, x64]

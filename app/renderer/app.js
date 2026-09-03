@@ -133,7 +133,7 @@
     if (!state.devices.length) {
       const messages = {
         hid_unavailable: 'The bundled HID runtime could not start.',
-        permissions: 'A compatible duckyPad was found, but macOS could not open its HID interface. Reconnect the pad, approve any USB accessory prompt, then retry.',
+        permissions: 'A compatible duckyPad was found but macOS blocked opening it (input-device permission). Grant it: System Settings → Privacy & Security → Input Monitoring → add "duckyPad Configurator" and enable it, then fully quit and relaunch, and retry. A macOS prompt may also appear when you press SCAN.',
         unresponsive: 'A compatible duckyPad was found but did not answer its HID probe. Disconnect and reconnect it, then retry.',
         sudo: 'Linux needs permission to read the HID device. Check udev rules or run with the required device access.',
         not_found: 'No compatible duckyPad is visible to macOS. Check USB, cable, and Bluetooth mode.',
