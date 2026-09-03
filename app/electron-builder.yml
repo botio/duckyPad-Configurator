@@ -1,0 +1,33 @@
+appId: com.dekunukem.duckypad-configurator
+productName: duckyPad Configurator
+artifactName: duckyPad-Configurator-${version}-${os}-${arch}.${ext}
+directories:
+  output: ../release
+files:
+  - main/**
+  - renderer/**
+  - resources/**
+extraResources:
+  - from: ../build/duckypad-core
+    to: duckypad-core
+mac:
+  category: public.app-category.developer-tools
+  icon: resources/icon.icns
+  identity: null
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+linux:
+  category: Utility
+  icon: resources/icon_512.png
+  target:
+    - target: AppImage
+      arch: [x64]
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

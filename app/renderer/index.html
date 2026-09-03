@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>duckyPad Configurator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app" class="app boot">
+    <header class="topbar"><div class="wordmark">duckyPad <b>CONFIGURATOR</b></div><div id="connection-chip" class="chip">STARTING CORE</div><button id="connect-button" class="accent">CONNECT</button></header>
+    <section id="boot-view" class="state-view"><div class="spinner"></div><p>Starting duckyPad core…</p></section>
+    <section id="no-device-view" class="state-view hidden">
+      <article class="welcome-card"><p class="eyebrow">D3 / DEVICE CONFIGURATOR</p><h1>Connect the pad,<br>shape the workflow.</h1><p>Connect a duckyPad over USB, or open a profile backup folder. The original duckyPad uses a 3 × 5 key matrix.</p><div class="button-row"><button id="scan-button" class="accent">SCAN FOR DUCKYPAD</button><button id="folder-button">OPEN BACKUP FOLDER</button></div><div id="model-picker" class="hidden"><p>Which device format does this folder use?</p><button data-model="dp20">ORIGINAL / 3 × 5</button><button data-model="dp24">PRO / 4 × 5</button></div><div id="device-list" class="device-list"></div></article>
+    </section>
+    <section id="workspace" class="workspace hidden">
+      <aside class="panel profiles-panel"><div class="panel-title"><span>PROFILES</span><button id="new-profile" title="Add profile">＋</button></div><div id="profile-list" class="profile-list"></div><div class="mini-actions"><button id="profile-up">↑</button><button id="profile-down">↓</button><button id="profile-duplicate">DUP</button><button id="profile-rename">REN</button><button id="profile-delete">DEL</button></div><div id="device-info" class="device-info"></div></aside>
+      <section class="panel pad-panel"><div class="panel-title"><span>ONBOARD SWITCHES</span><span id="pad-model" class="dim"></span></div><div class="pad-hardware"><div id="key-grid" class="key-grid"></div><div class="hardware-right"><div id="oled" class="oled"><span>P-</span><small>NO PROFILE</small></div><div class="switch-keys"><button id="previous-profile">−</button><button id="next-profile">＋</button></div></div></div></section>
+      <section class="panel key-panel"><div class="panel-title"><span>KEY CONFIG</span><button id="clear-key">CLEAR KEY</button></div><label>LINE 1<input id="key-name" maxlength="7" disabled></label><label>LINE 2<input id="key-name-2" maxlength="7" disabled></label><div class="key-options"><label><input id="allow-abort" type="checkbox" disabled> ABORT</label><label><input id="dont-repeat" type="checkbox" disabled> NO REPEAT</label><label>LED <input id="key-color" type="color" disabled></label></div></section>
+      <section class="panel script-panel"><div class="panel-title"><span>DUCKYSCRIPT</span><a id="script-docs" href="#">GUIDE ↗</a></div><div class="script-mode"><label><input name="script-mode" type="radio" value="press" checked> ON PRESS</label><label><input name="script-mode" type="radio" value="release"> ON RELEASE</label></div><textarea id="script" spellcheck="false" disabled placeholder="Select a key to edit its duckyScript…"></textarea><p id="syntax-status" class="syntax-status">Select a key to check its script.</p></section>
+      <aside class="side-stack"><section id="updates-panel" class="panel compact"><div class="panel-title"><span>UPDATES</span><button id="refresh-updates">↻</button></div><p id="update-status">Checking…</p></section><section id="herdr-panel" class="panel compact hidden"><div class="panel-title"><span>HERDR</span><button id="refresh-herdr">↻</button></div><p id="herdr-status">Checking integration…</p><div class="button-row"><button id="herdr-install">INSTALL</button><button id="herdr-flash">FLASH</button><button id="herdr-stock">STOCK</button></div></section></aside>
+      <footer class="panel resources"><span>RESOURCES</span><button id="save-button" class="accent">SAVE</button><button id="backup-button">BACKUP</button><button id="export-button">EXPORT</button><button id="import-button">IMPORT</button><button id="open-folder">OPEN FOLDER</button><button id="manual-link">MANUAL ↗</button></footer>
+    </section>
+    <div id="toast" class="toast hidden" role="status"></div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

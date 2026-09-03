@@ -1,13 +1,20 @@
 # duckyPad Configurator
 
-This is the software that configures [duckyPad Macropads](duckypad.com)!
+Desktop configurator for [duckyPad Macropads](https://duckypad.com).
 
-### How to Use
+## Downloads
 
-* [Click me to download the latest version](https://github.com/duckyPad/duckyPad-Configurator/releases/latest)
+Download the platform package from the [latest release](https://github.com/botio/duckyPad-Configurator/releases/latest):
 
-* [Click me for full instructions](https://dekunukem.github.io/duckyPad-Pro/doc/getting_started.html)
+* **Linux:** `duckyPad-Configurator-*-linux-x86_64.AppImage`
+* **macOS:** separate Apple Silicon and Intel `.dmg` files
+* **Windows:** x64 NSIS installer
 
+Version 5 uses an Electron desktop shell with a bundled Python device core. It works without a system Python installation and retains duckyPad 2020 HID, duckyPad Pro storage, compiler, profile, backup, import/export, update, and herdr integrations.
+
+Open **Connect → Open Backup Folder** to edit a local duckyPad profile folder without attaching hardware. On Linux, a physical duckyPad requires permission to access its HID device; install the repository's udev rule or run with the device access your distribution requires.
+
+Full device instructions: [duckyPad documentation](https://dekunukem.github.io/duckyPad-Pro/doc/getting_started.html).
 ### Feedbacks
 
 * [Open an issue](https://github.com/duckyPad/duckyPad-Configurator/issues)
@@ -26,14 +33,10 @@ The Configurator can drive the [duckyPad × herdr plugin](https://github.com/duc
 
 ### Using it
 
-1. Launch the Configurator and click **herdr Integration…** in the *Updates* frame (bottom-right).
-2. The dialog shows a live diagnostics block:
-   * `herdr` / `cargo` / `dfu-util` versions
-   * plugin repo path, `herdr plugin list` registration, user-service status
-   * the config file location, any palette overrides, and pinned slots
-   * the `dfu-util` command to flash the herdr-capable firmware, plus the stock rollback command
-3. Click **Install / Upgrade Plugin** to run the repo's `install.sh` (builds the Rust daemon, registers the plugin with herdr, and installs the user service). Click **Stop & Uninstall Service** to remove it.
-4. Click **Open Config (JSON)** to edit `herdr.json` in your system editor, or **Copy Firmware Flash Cmd** to copy the `dfu-util` invocation for a guided flash.
+1. Launch the Configurator and use the **HERDR** panel in the right sidebar.
+2. The panel exposes its current DFU and installation readiness. Use **↻** to refresh it after changing your herdr environment.
+3. Click **INSTALL** to run the plugin installer. Click **FLASH** for the herdr firmware or **STOCK** to restore the stock image; both require an explicit confirmation.
+4. Edit `herdr.json` at the path below when you need palette or slot overrides.
 
 ### Config file
 

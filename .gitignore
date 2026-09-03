@@ -14,3 +14,14 @@ src/squashfs-root/
 src/duckyPad-Configurator_*_x86_64.AppImage
 src/duckyPad-Configurator_*_macOS_ARM64.dmg
 src/dmg-root/
+
+# Electron/PyInstaller build outputs
+/build/
+/release/
+/src/build-sidecar/
+/app/node_modules/
+/app/resources/icon.icns
+
+# Python bytecode
+__pycache__/
+*.py[cod]

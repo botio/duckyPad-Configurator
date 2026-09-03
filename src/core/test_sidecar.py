@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from core.service import CoreError, CoreService
+
+
+def check(condition: bool, label: str) -> None:
+    if not condition:
+        raise AssertionError(label)
+    print(f"PASS {label}")
+
+
+def main() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary) / "duckypad"
+        profile = root / "profile_Alpha"
+        profile.mkdir(parents=True)
+        (profile / "config.txt").write_text("z1 HELLO\nx1 WORLD\nBG_COLOR 244 241 233\n", encoding="utf-8")
+        (profile / "key1.txt").write_text("", encoding="utf-8")
+        (root / "profile_info.txt").write_text("1 Alpha\n", encoding="utf-8")
+        (root / "user_header.txt").write_text("// header\n", encoding="utf-8")
+        service = CoreService()
+        state = service.device_connect_folder(str(root), "dp20")
+        check(state["connected"] and state["profiles"][0]["name"] == "Alpha", "connect folder")
+        loaded = service.profiles_get("Alpha")
+        check(loaded["keylist"][0]["name"] == "HELLO", "canonical dp20 key mapping")
+        loaded["keylist"][0]["script"] = ""
+        service.profiles_update("Alpha", {"keylist": loaded["keylist"]})
+        check(service.script_check("")["ok"], "valid script compiles")
+        try:
+            service.script_check("print 'bad'")
+        except CoreError as error:
+            check(error.code == -32003, "invalid script reports compiler error")
+        else:
+            raise AssertionError("invalid script unexpectedly compiled")
+        service.profiles_create("Beta")
+        service.profiles_rename("Beta", "Gamma")
+        service.profiles_move("Gamma", "up")
+        service.profiles_duplicate("Gamma")
+        service.profiles_delete("Gamma copy")
+        check(len(service.session_state()["profiles"]) == 2, "profile CRUD")
+        backup = service.profiles_save(to="backup")
+        check(Path(backup["path"]).is_dir(), "backup written")
+        export = service.profiles_export(["Alpha"], temporary)
+        check(Path(export["path"]).is_file(), "zip exported")
+        service.headers_set(["// updated"])
+        check(service.headers_get()["user_header"] == ["// updated"], "headers persisted in session")
+        status = service.herdr_status()
+        check("ts" in status, "herdr status is non-fatal without device")
+        sidecar = subprocess.Popen([sys.executable, str(ROOT / "core" / "sidecar.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert sidecar.stdin and sidecar.stdout
+        sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
+        sidecar.stdin.flush()
+        response = json.loads(sidecar.stdout.readline())
+        check(response["result"]["sidecar_version"] == "5.0.0", "NDJSON hello")
+        sidecar.terminate(); sidecar.wait(timeout=5)
+
+
+if __name__ == "__main__":
+    main()

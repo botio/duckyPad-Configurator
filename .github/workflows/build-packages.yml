@@ -1,12 +1,13 @@
 name: build-packages
 
-# Building a tag (e.g. `v4.1.1`) packages the Configurator on the matching
-# platform runners and publishes Linux AppImage and macOS ARM64 DMG assets.
-# PyInstaller does not cross-compile, so each OS is built on its own runner.
+# Tkinter 4.x packaging (frozen line). Building a tag packages the Configurator
+# on the matching platform runners and publishes Linux AppImage and macOS ARM64
+# DMG assets. PyInstaller does not cross-compile, so each OS is built on its
+# own runner. v5+ tags are handled by build-electron.yml instead.
 on:
   push:
     tags:
-      - 'v*'
+      - 'v4*'
 
 jobs:
   linux:
