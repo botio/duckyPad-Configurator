@@ -1,5 +1,5 @@
 import ctypes
-import hid
+import hid_proxy as hid
 import os
 import sys
 from datetime import datetime, timezone

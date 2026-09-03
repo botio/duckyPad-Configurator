@@ -31,6 +31,7 @@ PyInstaller.__main__.run([
     f"--specpath={ROOT / 'build-sidecar'}",
     "--collect-all=certifi",
     "--hidden-import=hid",
+    "--hidden-import=hid_proxy",
     "--hidden-import=psutil",
     "--hidden-import=herdr",
     "--hidden-import=herdr_config",

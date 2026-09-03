@@ -1,5 +1,5 @@
 import os
-import hid
+import hid_proxy as hid
 import time
 import shutil
 import scan_md5

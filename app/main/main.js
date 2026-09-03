@@ -2,6 +2,8 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron')
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const net = require('node:net');
+const os = require('node:os');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(APP_ROOT, '..');
@@ -13,6 +15,10 @@ let nextRequestId = 1;
 const pending = new Map();
 const restartTimes = [];
 let quitting = false;
+let hidServer = null;
+let hidServerPath = null;
+const hidHandles = new Map();
+let nextHidHandle = 1;
 
 function rendererEvent(method, params) {
   if (!windowRef || windowRef.isDestroyed()) return;
@@ -57,10 +63,120 @@ function handleMessage(line) {
   if (payload.method && payload.method.startsWith('event/')) rendererEvent(payload.method, payload.params || {});
 }
 
+// macOS routes the sidecar's raw HID calls through the .app main process over a
+// Unix socket. The Input Monitoring TCC grant is keyed to the .app's main
+// executable; the sidecar is a different ad-hoc binary and its own
+// IOHIDDeviceOpen is denied. Performing the open (and I/O) here succeeds.
+function startHidProxy() {
+  if (process.platform !== 'darwin') return null;
+  if (hidServer) return hidServerPath;
+  const sockPath = path.join(os.tmpdir(), `duckypad-hid-${process.pid}.sock`);
+  try { fs.unlinkSync(sockPath); } catch (err) { /* stale file, ignore */ }
+  const server = net.createServer((socket) => {
+    let buffer = '';
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      let newline;
+      while ((newline = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line) handleHidRequest(socket, line).catch(() => {});
+      }
+    });
+    socket.on('close', () => {
+      for (const hid of hidHandles.values()) hid.close().catch(() => {});
+      hidHandles.clear();
+    });
+    socket.on('error', () => {});
+  });
+  hidServer = server;
+  hidServerPath = sockPath;
+  server.on('error', (err) => {
+    console.error(`hid proxy: ${err && err.message || err}`);
+    hidServer = null;
+    hidServerPath = null;
+  });
+  server.listen(sockPath);
+  return sockPath;
+}
+
+function stopHidProxy() {
+  if (hidServer) {
+    try { hidServer.close(); } catch (err) { /* ignore */ }
+    hidServer = null;
+  }
+  for (const hid of hidHandles.values()) hid.close().catch(() => {});
+  hidHandles.clear();
+  if (hidServerPath) {
+    try { fs.unlinkSync(hidServerPath); } catch (err) { /* ignore */ }
+    hidServerPath = null;
+  }
+}
+
+async function handleHidRequest(socket, line) {
+  let msg;
+  try { msg = JSON.parse(line); } catch (err) {
+    socket.write(JSON.stringify({ error: 'bad request' }) + '\n');
+    return;
+  }
+  const respond = (obj) => { try { socket.write(JSON.stringify(obj) + '\n'); } catch (err) { /* gone */ } };
+  let nodeHid;
+  try { nodeHid = require('node-hid'); } catch (err) {
+    respond({ error: `node-hid unavailable: ${err && err.message || err}` });
+    return;
+  }
+  try {
+    if (msg.op === 'enumerate') {
+      const devices = await nodeHid.devicesAsync();
+      respond({ devices: devices.map((d) => ({
+        vendor_id: d.vendorId,
+        product_id: d.productId,
+        usage: d.usage || 0,
+        usage_page: d.usagePage || 0,
+        path: Buffer.from(d.path || '', 'utf8').toString('base64'),
+        serial_number: d.serialNumber || null,
+        manufacturer: d.manufacturer || null,
+        product: d.product || null,
+      })) });
+    } else if (msg.op === 'open') {
+      const target = Buffer.from(msg.path || '', 'base64').toString('utf8');
+      const hid = await nodeHid.HIDAsync.open(target, { nonExclusive: true });
+      const handle = nextHidHandle++;
+      hidHandles.set(handle, hid);
+      respond({ handle });
+    } else if (msg.op === 'write') {
+      const hid = hidHandles.get(msg.handle);
+      if (!hid) throw new Error(`unknown HID handle ${msg.handle}`);
+      const bytes = await hid.write(Buffer.from(msg.data || '', 'base64'));
+      respond({ result: bytes });
+    } else if (msg.op === 'read') {
+      const hid = hidHandles.get(msg.handle);
+      if (!hid) throw new Error(`unknown HID handle ${msg.handle}`);
+      const timeout = (typeof msg.timeout === 'number' && msg.timeout > 0) ? msg.timeout : 20000;
+      const buf = await hid.read(timeout);
+      respond({ data: buf ? buf.toString('base64') : null });
+    } else if (msg.op === 'close') {
+      const hid = hidHandles.get(msg.handle);
+      if (hid) {
+        await hid.close().catch(() => {});
+        hidHandles.delete(msg.handle);
+      }
+      respond({ ok: true });
+    } else {
+      respond({ error: `unknown op ${msg.op}` });
+    }
+  } catch (err) {
+    respond({ error: String(err && err.message || err) });
+  }
+}
+
 function startSidecar() {
   const { command, args, cwd } = sidecarCommand();
   if (!fs.existsSync(command)) throw new Error(`Python core is missing: ${command}`);
-  sidecar = spawn(command, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  const hidSock = startHidProxy();
+  const env = { ...process.env };
+  if (hidSock) env.DUCKYPAD_HID_SOCK = hidSock;
+  sidecar = spawn(command, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], env, windowsHide: true });
   lineBuffer = '';
   sidecar.stdout.setEncoding('utf8');
   sidecar.stdout.on('data', (chunk) => {
@@ -158,40 +274,7 @@ async function boot() {
   windowRef.show();
 }
 
-async function mainHidProbe() {
-  let nodeHid;
-  try { nodeHid = require('node-hid'); } catch (err) {
-    return `main-process probe: node-hid could not load (${err && err.message || err})`;
-  }
-  let devices = [];
-  try { devices = await nodeHid.devicesAsync(); } catch (err) {
-    return `main-process probe: device enumeration failed (${err && err.message || err})`;
-  }
-  const pads = devices.filter((d) => d.vendorId === 0x0483 && (d.productId === 0xd11c || d.productId === 0xd11d));
-  if (!pads.length) return 'main-process probe: no duckyPad visible to the Electron main process';
-  const pad = pads[0];
-  let hid;
-  try {
-    hid = await nodeHid.HIDAsync.open(pad.path, { nonExclusive: true });
-    await hid.close().catch(() => {});
-    return `main-process probe: IOHIDDeviceOpen SUCCEEDED from the Electron main process (path ${pad.path}) — the .app is the granted identity, so routing the open through the main process will work.`;
-  } catch (err) {
-    return `main-process probe: IOHIDDeviceOpen FAILED from the main process: ${err && err.message || err}`;
-  }
-}
-
-ipcMain.handle('core:call', async (_event, { method, params }) => {
-  const result = await request(method, params || {});
-  const isScanFailure = method === 'device/scan'
-    && process.platform === 'darwin'
-    && result && typeof result === 'object'
-    && (!Array.isArray(result.devices) || result.devices.length === 0);
-  if (isScanFailure) {
-    const probe = await mainHidProbe();
-    result.detail = [result.detail, probe].filter(Boolean).join('\n');
-  }
-  return result;
-});
+ipcMain.handle('core:call', (_event, { method, params }) => request(method, params || {}));
 ipcMain.handle('core:pickExportDir', async () => {
   const result = await dialog.showOpenDialog(windowRef, { properties: ['openDirectory', 'createDirectory'] });
   return result.canceled ? null : result.filePaths[0];
@@ -216,6 +299,7 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) boot(); });
 app.on('before-quit', () => {
   quitting = true;
+  stopHidProxy();
   if (!sidecar || sidecar.killed) return;
   sidecar.kill('SIGTERM');
   setTimeout(() => { if (sidecar && !sidecar.killed) sidecar.kill('SIGKILL'); }, 5000).unref();
