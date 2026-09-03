@@ -158,7 +158,40 @@ async function boot() {
   windowRef.show();
 }
 
-ipcMain.handle('core:call', (_event, { method, params }) => request(method, params || {}));
+async function mainHidProbe() {
+  let nodeHid;
+  try { nodeHid = require('node-hid'); } catch (err) {
+    return `main-process probe: node-hid could not load (${err && err.message || err})`;
+  }
+  let devices = [];
+  try { devices = await nodeHid.devicesAsync(); } catch (err) {
+    return `main-process probe: device enumeration failed (${err && err.message || err})`;
+  }
+  const pads = devices.filter((d) => d.vendorId === 0x0483 && (d.productId === 0xd11c || d.productId === 0xd11d));
+  if (!pads.length) return 'main-process probe: no duckyPad visible to the Electron main process';
+  const pad = pads[0];
+  let hid;
+  try {
+    hid = await nodeHid.HIDAsync.open(pad.path, { nonExclusive: true });
+    await hid.close().catch(() => {});
+    return `main-process probe: IOHIDDeviceOpen SUCCEEDED from the Electron main process (path ${pad.path}) — the .app is the granted identity, so routing the open through the main process will work.`;
+  } catch (err) {
+    return `main-process probe: IOHIDDeviceOpen FAILED from the main process: ${err && err.message || err}`;
+  }
+}
+
+ipcMain.handle('core:call', async (_event, { method, params }) => {
+  const result = await request(method, params || {});
+  const isScanFailure = method === 'device/scan'
+    && process.platform === 'darwin'
+    && result && typeof result === 'object'
+    && (!Array.isArray(result.devices) || result.devices.length === 0);
+  if (isScanFailure) {
+    const probe = await mainHidProbe();
+    result.detail = [result.detail, probe].filter(Boolean).join('\n');
+  }
+  return result;
+});
 ipcMain.handle('core:pickExportDir', async () => {
   const result = await dialog.showOpenDialog(windowRef, { properties: ['openDirectory', 'createDirectory'] });
   return result.canceled ? null : result.filePaths[0];
