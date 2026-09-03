@@ -54,4 +54,35 @@ if generated != OUTPUT and generated.is_dir():
 
 if not (OUTPUT / ("duckypad_core.exe" if sys.platform == "win32" else "duckypad_core")).exists():
     raise RuntimeError(f"PyInstaller output missing: {OUTPUT}")
+
+if sys.platform == "darwin":
+    # The sidecar is a standalone Mach-O tree that macOS treats separately from
+    # the Electron .app. An unsigned sidecar can have its HID/IOKit access
+    # denied even when the app itself is signed, so ad-hoc sign every native
+    # image in the bundle before it ships inside the DMG.
+    import subprocess
+    native_images = [
+        OUTPUT / "duckypad_core",
+        *(OUTPUT.rglob("*.so")),
+        *(OUTPUT.rglob("*.dylib")),
+        *(OUTPUT.rglob("*.bundle")),
+    ]
+    for image in sorted(set(native_images)):
+        if not image.exists():
+            continue
+        completed = subprocess.run(
+            ["codesign", "--force", "--sign", "-", str(image)],
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(f"codesign failed for {image}: {completed.stderr}")
+        verify = subprocess.run(
+            ["codesign", "--verify", "--strict", str(image)],
+            capture_output=True,
+            text=True,
+        )
+        if verify.returncode != 0:
+            raise RuntimeError(f"codesign verify failed for {image}: {verify.stderr}")
+
 print(OUTPUT)

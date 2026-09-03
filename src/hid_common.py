@@ -1,6 +1,44 @@
+import ctypes
 import hid
+import os
 import sys
 from datetime import datetime, timezone
+
+_HIDAPI_LIB = None
+
+def _hidapi_global_error():
+    """Return the last global error recorded by libhidapi, or None.
+
+    hidapi stores a global error string when calls such as hid_open_path()
+    fail, but the Python binding never reads it. We reach it through the
+    native library the hid module was built against, so the real IOKit
+    code / message (e.g. kIOReturnDenied) is no longer silently dropped.
+    """
+    global _HIDAPI_LIB
+    try:
+        if _HIDAPI_LIB is None:
+            lib_dir = os.path.dirname(os.path.abspath(hid.__file__))
+            candidates = [
+                os.path.join(lib_dir, 'hidapi.so'),
+                os.path.join(lib_dir, 'libhidapi.so'),
+            ]
+            for cand in candidates:
+                if os.path.exists(cand):
+                    _HIDAPI_LIB = ctypes.CDLL(cand)
+                    break
+            if _HIDAPI_LIB is None:
+                return None
+        hid_error = _HIDAPI_LIB.hid_error
+        hid_error.restype = ctypes.c_wchar_p if sys.platform == 'darwin' else ctypes.c_char_p
+        hid_error.argtypes = [ctypes.c_void_p]
+        result = hid_error(None)
+        if result is None:
+            return None
+        if isinstance(result, bytes):
+            return result.decode('utf-8', 'replace')
+        return result
+    except Exception:
+        return None
 
 dp20_pid = 0xd11c
 dpp_pid = 0xd11d
@@ -60,7 +98,13 @@ def probe_duckypad_paths(dp_path_list):
                 raise OSError(f"duckyPad rejected the HID probe (status {result[2]})")
             dp_info_list.append(make_dp_info_dict(result, this_path))
         except Exception as exc:
-            errors.append(f"{type(exc).__name__}: {exc}")
+            # The Python hid binding reports a bare "OSError: open failed" on
+            # macOS; the real IOKit code lives in hidapi's global error string.
+            detail = _hidapi_global_error()
+            if detail:
+                errors.append(f"{type(exc).__name__}: {exc} | hidapi: {detail}")
+            else:
+                errors.append(f"{type(exc).__name__}: {exc}")
         finally:
             if myh is not None:
                 try:

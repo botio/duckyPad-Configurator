@@ -65,12 +65,32 @@ def main() -> None:
         finally:
             service_module.hid_op.get_duckypad_path = original_paths
             service_module.hid_op.probe_duckypad_paths = original_probe
+        import hid_common
+        original_hid_module = hid_common.hid
+        original_hidapi_error = hid_common._hidapi_global_error
+        try:
+            class _FakeHidDevice:
+                def open_path(self, _path):
+                    raise OSError("open failed")
+                def close(self):
+                    pass
+            class _FakeHidModule:
+                @staticmethod
+                def device():
+                    return _FakeHidDevice()
+            hid_common.hid = _FakeHidModule
+            hid_common._hidapi_global_error = lambda: "hid_open_path: failed to open IOHIDDevice from mach entry: (0xe00002c6) Request denied by service policy"
+            _found, _errors = hid_common.probe_duckypad_paths([b"/dev/mock-duckypad"])
+            check(_errors and "0xe00002c6" in _errors[0] and "hidapi:" in _errors[0], "hid probe surfaces hidapi IOKit detail")
+        finally:
+            hid_common.hid = original_hid_module
+            hid_common._hidapi_global_error = original_hidapi_error
         sidecar = subprocess.Popen([sys.executable, str(ROOT / "core" / "sidecar.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         assert sidecar.stdin and sidecar.stdout
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.2", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.3", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 
