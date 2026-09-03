@@ -3,6 +3,7 @@ productName: duckyPad Configurator
 artifactName: duckyPad-Configurator-${version}-${os}-${arch}.${ext}
 directories:
   output: ../release
+afterPack: after-pack.js
 files:
   - main/**
   - renderer/**

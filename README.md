@@ -14,6 +14,8 @@ Version 5 uses an Electron desktop shell with a bundled Python device core. It w
 
 Open **Connect → Open Backup Folder** to edit a local duckyPad profile folder without attaching hardware. On Linux, a physical duckyPad requires permission to access its HID device; install the repository's udev rule or run with the device access your distribution requires.
 
+The macOS package is ad-hoc signed, not notarized. On its first launch, Control-click the app in Finder, choose **Open**, then confirm **Open**. This is the supported Gatekeeper override for an unsigned app and is available without an Apple Developer membership.
+
 Full device instructions: [duckyPad documentation](https://dekunukem.github.io/duckyPad-Pro/doc/getting_started.html).
 ### Feedbacks
 
