@@ -93,6 +93,8 @@ def main() -> None:
                     self.offset = 0
 
             def read(self, _size):
+                if self.commands[-1] == dp20_dumpsd.HID_COMMAND_SW_RESET:
+                    return [0, 0, 0] + [0] * 61
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
                     status = 0 if self.current_path in self.files else 1
                     return [0, 0, status] + [0] * 61
@@ -167,7 +169,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.15", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.16", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":

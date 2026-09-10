@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 
 import hid_proxy as hid
 from shared import *
@@ -79,9 +80,12 @@ def _exit_file_access_mode(hid_obj):
     packet[2] = HID_COMMAND_SW_RESET
     try:
         hid_obj.write(packet)
+        response = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
+        if len(response) != DUCKYPAD_TO_PC_HID_BUF_SIZE or response[2] != 0:
+            raise OSError("SW_RESET was not acknowledged")
+        time.sleep(0.5)
     except OSError as exc:
         print("DP20 direct mirror completed but could not exit File Access Mode:", exc)
-
 
 def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_obj=None):
     """Build a DP20 profile mirror without the firmware's fatal DUMP_SD walker."""
