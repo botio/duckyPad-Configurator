@@ -55,8 +55,9 @@ def main() -> int:
         except json.JSONDecodeError:
             _write({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error", "data": {}}})
         except Exception as error:  # keep RPC transport alive for renderer recovery
-            print(f"sidecar internal error: {error}", file=sys.stderr, flush=True)
-            _write({"jsonrpc": "2.0", "id": request.get("id") if "request" in locals() else None, "error": {"code": -32603, "message": "Internal sidecar error", "data": {"detail": str(error)}}})
+            detail = f"{type(error).__name__}: {error}"
+            print(f"sidecar internal error: {detail}", file=sys.stderr, flush=True)
+            _write({"jsonrpc": "2.0", "id": request.get("id") if "request" in locals() else None, "error": {"code": -32603, "message": f"Internal sidecar error: {detail}", "data": {"detail": detail}}})
     return 0
 
 
