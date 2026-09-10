@@ -106,37 +106,38 @@ def _sw_reset_and_reopen(dp_path):
 
     Returns the reopened hid device, or None if the flow failed.
     """
-    sw_buf = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE
-    sw_buf[0] = 5                    # HID Usage ID (OUT report)
-    sw_buf[1] = 0
-    sw_buf[2] = HID_COMMAND_SW_RESET  # 20
-    dp = hid.device()
+    dp = None
     try:
+        sw_buf = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE
+        sw_buf[0] = 5                    # HID Usage ID (OUT report)
+        sw_buf[1] = 0
+        sw_buf[2] = HID_COMMAND_SW_RESET  # 20
+        dp = hid.device()
         dp.open_path(dp_path)
-    except Exception as exc:
-        print("pre-scan: open failed:", exc)
-        return None
-    try:
         dp.write(sw_buf)
         try:
             ack = dp.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
             print("pre-scan: SW_RESET ack:", list(ack[:4]) if ack else None)
         except Exception as exc:
             print("pre-scan: read ack (pad mid-reset):", exc)
-    finally:
-        try:
-            dp.close()
-        except Exception:
-            pass
-    new_path = _find_dp20_path(dp_path)
-    if new_path is None:
-        print("pre-scan: duckyPad did not re-enumerate after SW_RESET")
+    except Exception as exc:
+        print("pre-scan: SW_RESET send failed:", exc)
         return None
-    # Give the rebooted pad time to finish its boot-time profile scan
-    # (f_mount + ensure_new_profile_format + scan_profiles) before DUMP_SD.
-    print("pre-scan: re-enumerated at", new_path, "- waiting for boot to settle")
-    time.sleep(5)
+    finally:
+        if dp is not None:
+            try:
+                dp.close()
+            except Exception:
+                pass
     try:
+        new_path = _find_dp20_path(dp_path)
+        if new_path is None:
+            print("pre-scan: duckyPad did not re-enumerate after SW_RESET")
+            return None
+        # Give the rebooted pad time to finish its boot-time profile scan
+        # (f_mount + ensure_new_profile_format + scan_profiles) before DUMP_SD.
+        print("pre-scan: re-enumerated at", new_path, "- waiting for boot to settle")
+        time.sleep(5)
         dp.open_path(new_path)
     except Exception as exc:
         print("pre-scan: re-open failed:", exc)

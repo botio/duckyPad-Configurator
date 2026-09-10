@@ -274,7 +274,22 @@ async function boot() {
   windowRef.show();
 }
 
-ipcMain.handle('core:call', (_event, { method, params }) => request(method, params || {}));
+function coreErrorPayload(error) {
+  const value = error && typeof error === 'object' ? error : {};
+  return {
+    code: Number.isInteger(value.code) ? value.code : -32000,
+    message: typeof value.message === 'string' ? value.message : String(error || 'Core request failed'),
+    data: value.data && typeof value.data === 'object' ? value.data : {},
+  };
+}
+
+ipcMain.handle('core:call', async (_event, { method, params }) => {
+  try {
+    return { ok: true, result: await request(method, params || {}) };
+  } catch (error) {
+    return { ok: false, error: coreErrorPayload(error) };
+  }
+});
 ipcMain.handle('core:pickExportDir', async () => {
   const result = await dialog.showOpenDialog(windowRef, { properties: ['openDirectory', 'createDirectory'] });
   return result.canceled ? null : result.filePaths[0];
