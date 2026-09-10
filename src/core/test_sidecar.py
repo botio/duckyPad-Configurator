@@ -115,10 +115,10 @@ def main() -> None:
             check(
                 fake_dp20.paths == [b"/dev/mock-duckypad"]
                 and dp20_dumpsd.HID_COMMAND_DUMP_SD not in fake_dp20.commands
-                and dp20_dumpsd.HID_COMMAND_SW_RESET not in fake_dp20.commands
+                and fake_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_SW_RESET
                 and (dp20_dump / "profile_Default" / "config.txt").read_text() == "z1 Hello\n"
                 and (dp20_dump / "profile_Default" / "key1.txt").read_text() == "STRING hello",
-                "dp20 direct file mirror never invokes the fatal walker",
+                "dp20 mirrors files before safely exiting File Access Mode",
             )
         finally:
             dp20_dumpsd.hid.device = original_device
@@ -167,7 +167,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.14", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.15", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":

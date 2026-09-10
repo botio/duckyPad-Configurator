@@ -73,6 +73,16 @@ def _dump_profile(profile_name, dump_dir_path, hid_obj, tk_root_obj, ui_text_obj
             save_to_file(profile_dir, dump_dir_path, file_name, content)
 
 
+def _exit_file_access_mode(hid_obj):
+    packet = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE
+    packet[0] = 5
+    packet[2] = HID_COMMAND_SW_RESET
+    try:
+        hid_obj.write(packet)
+    except OSError as exc:
+        print("DP20 direct mirror completed but could not exit File Access Mode:", exc)
+
+
 def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_obj=None):
     """Build a DP20 profile mirror without the firmware's fatal DUMP_SD walker."""
     del backup_dir_path
@@ -88,6 +98,7 @@ def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_o
         header = hid_dump_file(f"/{user_header_dot_txt}", dp20_h, missing_ok=True)
         if header is not None:
             save_to_file("", dump_dir_path, user_header_dot_txt, header)
+        _exit_file_access_mode(dp20_h)
         return True
     except OSError as exc:
         print("DP20 direct file mirror failed:", exc)
