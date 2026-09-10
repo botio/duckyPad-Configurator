@@ -66,35 +66,43 @@ def main() -> None:
             service_module.hid_op.get_duckypad_path = original_paths
             service_module.hid_op.probe_duckypad_paths = original_probe
         import dp20_dumpsd
-        original_enumerate = dp20_dumpsd.hid.enumerate
-        original_millis = dp20_dumpsd.millis
-        original_time = dp20_dumpsd.time
-        old_path = b"/dev/old-duckypad"
-        new_path = b"/dev/new-duckypad"
-        snapshots = [
-            [{"vendor_id": 0x0483, "product_id": 0xd11c, "path": old_path}],
-            [],
-            [{"vendor_id": 0x0483, "product_id": 0xd11c, "path": new_path}],
-        ]
+        original_device = dp20_dumpsd.hid.device
+
+        class _FakeDP20:
+            def __init__(self):
+                self.paths = []
+                self.commands = []
+
+            def open_path(self, path):
+                self.paths.append(path)
+
+            def write(self, packet):
+                self.commands.append(packet[2])
+
+            def read(self, _size):
+                return [0, 4] + [0] * 62
+
+            def close(self):
+                pass
+
+        fake_dp20 = _FakeDP20()
         try:
-            dp20_dumpsd.hid.enumerate = lambda: snapshots.pop(0) if snapshots else []
-            tick = iter(range(100))
-            dp20_dumpsd.millis = lambda: next(tick)
-
-            class _FakeTime:
-                @staticmethod
-                def sleep(_seconds):
-                    pass
-
-            dp20_dumpsd.time = _FakeTime()
+            dp20_dumpsd.hid.device = lambda: fake_dp20
+            dp20_dump = root / "dp20-dump"
+            dp20_backup = root / "dp20-backup"
+            dp20_backup.mkdir()
             check(
-                dp20_dumpsd._find_dp20_path(old_path, timeout_ms=20) == new_path,
-                "dp20 reset waits for a fresh HID path",
+                dp20_dumpsd.dump_sd(b"/dev/mock-duckypad", str(dp20_dump), str(dp20_backup)),
+                "dp20 dump completes on a stable HID connection",
+            )
+            check(
+                fake_dp20.paths == [b"/dev/mock-duckypad"]
+                and fake_dp20.commands[0] == dp20_dumpsd.HID_COMMAND_DUMP_SD
+                and dp20_dumpsd.HID_COMMAND_SW_RESET not in fake_dp20.commands,
+                "dp20 dump never resets the device",
             )
         finally:
-            dp20_dumpsd.hid.enumerate = original_enumerate
-            dp20_dumpsd.millis = original_millis
-            dp20_dumpsd.time = original_time
+            dp20_dumpsd.hid.device = original_device
         import hid_common
         original_hid_module = hid_common.hid
         original_hidapi_error = hid_common._hidapi_global_error
@@ -140,7 +148,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.12", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.13", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 
