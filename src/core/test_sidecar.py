@@ -65,6 +65,36 @@ def main() -> None:
         finally:
             service_module.hid_op.get_duckypad_path = original_paths
             service_module.hid_op.probe_duckypad_paths = original_probe
+        import dp20_dumpsd
+        original_enumerate = dp20_dumpsd.hid.enumerate
+        original_millis = dp20_dumpsd.millis
+        original_time = dp20_dumpsd.time
+        old_path = b"/dev/old-duckypad"
+        new_path = b"/dev/new-duckypad"
+        snapshots = [
+            [{"vendor_id": 0x0483, "product_id": 0xd11c, "path": old_path}],
+            [],
+            [{"vendor_id": 0x0483, "product_id": 0xd11c, "path": new_path}],
+        ]
+        try:
+            dp20_dumpsd.hid.enumerate = lambda: snapshots.pop(0) if snapshots else []
+            tick = iter(range(100))
+            dp20_dumpsd.millis = lambda: next(tick)
+
+            class _FakeTime:
+                @staticmethod
+                def sleep(_seconds):
+                    pass
+
+            dp20_dumpsd.time = _FakeTime()
+            check(
+                dp20_dumpsd._find_dp20_path(old_path, timeout_ms=20) == new_path,
+                "dp20 reset waits for a fresh HID path",
+            )
+        finally:
+            dp20_dumpsd.hid.enumerate = original_enumerate
+            dp20_dumpsd.millis = original_millis
+            dp20_dumpsd.time = original_time
         import hid_common
         original_hid_module = hid_common.hid
         original_hidapi_error = hid_common._hidapi_global_error
@@ -110,7 +140,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.11", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.12", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 

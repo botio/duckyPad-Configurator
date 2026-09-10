@@ -70,11 +70,15 @@ DP_VENDOR_ID = 0x0483
 DP_PIDS = (0xd11c, 0xd11d)   # duckyPad OG (20) and Pro (24)
 
 def _find_dp20_path(prefer_path, timeout_ms=12000):
-    """After a SW_RESET the duckyPad reboots and re-enumerates; its HID path may
-    change. Poll hid.enumerate() for a duckyPad (vendor 0x0483 + a DP PID) and
-    return its path, preferring prefer_path if it still appears. Returns None
-    if the pad does not re-appear within the timeout."""
+    """Wait for a SW_RESET to remove the old HID entry, then re-enumerate it.
+
+    The firmware ACKs SW_RESET before delaying and resetting. Returning
+    ``prefer_path`` while that old entry still exists races the reset; macOS
+    later rejects it as a stale Mach device entry.
+    """
     deadline = millis() + timeout_ms
+    saw_original_path = False
+    original_path_disappeared = False
     while millis() < deadline:
         found = []
         try:
@@ -85,11 +89,22 @@ def _find_dp20_path(prefer_path, timeout_ms=12000):
                         found.append(p)
         except Exception:
             pass
-        if found:
-            if prefer_path in found:
+
+        if prefer_path in found:
+            if original_path_disappeared:
                 return prefer_path
+            saw_original_path = True
+        elif saw_original_path:
+            if original_path_disappeared:
+                if found:
+                    return found[0]
+            else:
+                original_path_disappeared = True
+        elif found:
+            # The reset already completed before our first poll.
             return found[0]
-        time.sleep(0.2)
+
+        time.sleep(0.05)
     return None
 
 def _sw_reset_and_reopen(dp_path):
