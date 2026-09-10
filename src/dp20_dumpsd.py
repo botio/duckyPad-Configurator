@@ -77,13 +77,12 @@ def _dump_profile(profile_name, dump_dir_path, hid_obj, tk_root_obj, ui_text_obj
 def _exit_file_access_mode(hid_obj):
     packet = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE
     packet[0] = 5
-    packet[2] = HID_COMMAND_SW_RESET
+    packet[2] = HID_COMMAND_EXIT_FILE_ACCESS
     try:
         hid_obj.write(packet)
         response = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
         if len(response) != DUCKYPAD_TO_PC_HID_BUF_SIZE or response[2] != 0:
-            raise OSError("SW_RESET was not acknowledged")
-        time.sleep(0.5)
+            raise OSError("EXIT_FILE_ACCESS was not acknowledged")
     except OSError as exc:
         print("DP20 direct mirror completed but could not exit File Access Mode:", exc)
 

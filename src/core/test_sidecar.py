@@ -93,7 +93,7 @@ def main() -> None:
                     self.offset = 0
 
             def read(self, _size):
-                if self.commands[-1] == dp20_dumpsd.HID_COMMAND_SW_RESET:
+                if self.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS:
                     return [0, 0, 0] + [0] * 61
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
                     status = 0 if self.current_path in self.files else 1
@@ -117,7 +117,7 @@ def main() -> None:
             check(
                 fake_dp20.paths == [b"/dev/mock-duckypad"]
                 and dp20_dumpsd.HID_COMMAND_DUMP_SD not in fake_dp20.commands
-                and fake_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_SW_RESET
+                and fake_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS
                 and (dp20_dump / "profile_Default" / "config.txt").read_text() == "z1 Hello\n"
                 and (dp20_dump / "profile_Default" / "key1.txt").read_text() == "STRING hello",
                 "dp20 mirrors files before safely exiting File Access Mode",
