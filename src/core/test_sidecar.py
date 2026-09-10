@@ -69,18 +69,37 @@ def main() -> None:
         original_device = dp20_dumpsd.hid.device
 
         class _FakeDP20:
+            files = {
+                "/profile_info.txt": b"0 Default\n",
+                "/profile_Default/config.txt": b"z1 Hello\n",
+                "/profile_Default/key1.txt": b"STRING hello",
+                "/user_header.txt": b"// header\n",
+            }
+
             def __init__(self):
                 self.paths = []
                 self.commands = []
+                self.current_path = None
+                self.offset = 0
 
             def open_path(self, path):
                 self.paths.append(path)
 
             def write(self, packet):
-                self.commands.append(packet[2])
+                command = packet[2]
+                self.commands.append(command)
+                if command == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
+                    self.current_path = bytes(packet[3:]).split(b"\0", 1)[0].decode()
+                    self.offset = 0
 
             def read(self, _size):
-                return [0, 4] + [0] * 62
+                if self.commands[-1] == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
+                    status = 0 if self.current_path in self.files else 1
+                    return [0, 0, status] + [0] * 61
+                content = self.files[self.current_path]
+                chunk = content[self.offset:self.offset + 60]
+                self.offset += len(chunk)
+                return [0, 0, len(chunk)] + list(chunk) + [0] * (61 - len(chunk))
 
             def close(self):
                 pass
@@ -89,17 +108,17 @@ def main() -> None:
         try:
             dp20_dumpsd.hid.device = lambda: fake_dp20
             dp20_dump = root / "dp20-dump"
-            dp20_backup = root / "dp20-backup"
-            dp20_backup.mkdir()
             check(
-                dp20_dumpsd.dump_sd(b"/dev/mock-duckypad", str(dp20_dump), str(dp20_backup)),
-                "dp20 dump completes on a stable HID connection",
+                dp20_dumpsd.dump_sd(b"/dev/mock-duckypad", str(dp20_dump), str(root / "backup")),
+                "dp20 direct file mirror completes",
             )
             check(
                 fake_dp20.paths == [b"/dev/mock-duckypad"]
-                and fake_dp20.commands[0] == dp20_dumpsd.HID_COMMAND_DUMP_SD
-                and dp20_dumpsd.HID_COMMAND_SW_RESET not in fake_dp20.commands,
-                "dp20 dump never resets the device",
+                and dp20_dumpsd.HID_COMMAND_DUMP_SD not in fake_dp20.commands
+                and dp20_dumpsd.HID_COMMAND_SW_RESET not in fake_dp20.commands
+                and (dp20_dump / "profile_Default" / "config.txt").read_text() == "z1 Hello\n"
+                and (dp20_dump / "profile_Default" / "key1.txt").read_text() == "STRING hello",
+                "dp20 direct file mirror never invokes the fatal walker",
             )
         finally:
             dp20_dumpsd.hid.device = original_device
@@ -148,9 +167,8 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.13", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.14", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
-
 
 if __name__ == "__main__":
     main()
