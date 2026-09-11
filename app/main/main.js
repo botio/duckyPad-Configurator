@@ -84,7 +84,7 @@ function startHidProxy() {
       }
     });
     socket.on('close', () => {
-      for (const hid of hidHandles.values()) hid.close().catch(() => {});
+      for (const hid of hidHandles.values()) { try { hid.close(); } catch (err) { /* ignore */ } }
       hidHandles.clear();
     });
     socket.on('error', () => {});
@@ -105,7 +105,7 @@ function stopHidProxy() {
     try { hidServer.close(); } catch (err) { /* ignore */ }
     hidServer = null;
   }
-  for (const hid of hidHandles.values()) hid.close().catch(() => {});
+  for (const hid of hidHandles.values()) { try { hid.close(); } catch (err) { /* ignore */ } }
   hidHandles.clear();
   if (hidServerPath) {
     try { fs.unlinkSync(hidServerPath); } catch (err) { /* ignore */ }
@@ -127,7 +127,7 @@ async function handleHidRequest(socket, line) {
   }
   try {
     if (msg.op === 'enumerate') {
-      const devices = await nodeHid.devicesAsync();
+      const devices = nodeHid.devices();
       respond({ devices: devices.map((d) => ({
         vendor_id: d.vendorId,
         product_id: d.productId,
@@ -140,25 +140,30 @@ async function handleHidRequest(socket, line) {
       })) });
     } else if (msg.op === 'open') {
       const target = Buffer.from(msg.path || '', 'base64').toString('utf8');
-      const hid = await nodeHid.HIDAsync.open(target, { nonExclusive: true });
+      // Synchronous HID (not HIDAsync): macOS hidapi is not safe when
+      // hid_write/hid_read are dispatched from different worker threads —
+      // IOHIDDeviceSetReport then fails with kIOReturnTimeout (0xE00002D6)
+      // partway through a sustained mirror. The sync API serializes every
+      // hid call on this single main thread, matching the legacy configurator.
+      const hid = new nodeHid.HID(target, { nonExclusive: true });
       const handle = nextHidHandle++;
       hidHandles.set(handle, hid);
       respond({ handle });
     } else if (msg.op === 'write') {
       const hid = hidHandles.get(msg.handle);
       if (!hid) throw new Error(`unknown HID handle ${msg.handle}`);
-      const bytes = await hid.write(Buffer.from(msg.data || '', 'base64'));
+      const bytes = hid.write(Buffer.from(msg.data || '', 'base64'));
       respond({ result: bytes });
     } else if (msg.op === 'read') {
       const hid = hidHandles.get(msg.handle);
       if (!hid) throw new Error(`unknown HID handle ${msg.handle}`);
       const timeout = (typeof msg.timeout === 'number' && msg.timeout > 0) ? msg.timeout : 20000;
-      const buf = await hid.read(timeout);
-      respond({ data: buf ? buf.toString('base64') : null });
+      const data = hid.readTimeout(timeout);
+      respond({ data: Buffer.from(data).toString('base64') });
     } else if (msg.op === 'close') {
       const hid = hidHandles.get(msg.handle);
       if (hid) {
-        await hid.close().catch(() => {});
+        hid.close();
         hidHandles.delete(msg.handle);
       }
       respond({ ok: true });
