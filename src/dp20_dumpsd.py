@@ -7,6 +7,22 @@ from shared import *
 
 
 DP20_KEY_COUNT = 20
+DP20_RESPONSE_TIMEOUT_MS = 1500
+
+
+def _read_response(hid_obj, operation):
+    response = hid_obj.read(
+        DUCKYPAD_TO_PC_HID_BUF_SIZE, DP20_RESPONSE_TIMEOUT_MS
+    )
+    if not response:
+        raise OSError(
+            f"{operation} timed out after {DP20_RESPONSE_TIMEOUT_MS} ms"
+        )
+    if len(response) != DUCKYPAD_TO_PC_HID_BUF_SIZE:
+        raise OSError(f"{operation} response is incomplete")
+    return response
+
+
 
 
 def save_to_file(sd_path, pc_dump_dir_path, file_name, file_content):
@@ -29,9 +45,7 @@ def hid_dump_file(sd_file_path, hid_obj, missing_ok=False):
         pc_to_duckypad_buf[3 + index] = ord(value)
 
     hid_obj.write(pc_to_duckypad_buf)
-    duckypad_to_pc_buf = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
-    if len(duckypad_to_pc_buf) != DUCKYPAD_TO_PC_HID_BUF_SIZE:
-        raise OSError("HID open file response is incomplete")
+    duckypad_to_pc_buf = _read_response(hid_obj, "HID open file")
     status = duckypad_to_pc_buf[2]
     if status != 0:
         if missing_ok and status in (4, 5):
@@ -42,9 +56,7 @@ def hid_dump_file(sd_file_path, hid_obj, missing_ok=False):
     while True:
         pc_to_duckypad_buf[2] = HID_COMMAND_READ_FILE
         hid_obj.write(pc_to_duckypad_buf)
-        duckypad_to_pc_buf = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
-        if len(duckypad_to_pc_buf) != DUCKYPAD_TO_PC_HID_BUF_SIZE:
-            raise OSError("HID read file response is incomplete")
+        duckypad_to_pc_buf = _read_response(hid_obj, "HID read file")
         if duckypad_to_pc_buf[1] != 0:
             raise OSError(f"HID read file failed: {duckypad_to_pc_buf[1]}")
         chunk_size = duckypad_to_pc_buf[2]
@@ -85,8 +97,8 @@ def _exit_file_access_mode(hid_obj):
     packet[2] = HID_COMMAND_EXIT_FILE_ACCESS
     try:
         hid_obj.write(packet)
-        response = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
-        if len(response) != DUCKYPAD_TO_PC_HID_BUF_SIZE or response[2] != 0:
+        response = _read_response(hid_obj, "EXIT_FILE_ACCESS")
+        if response[2] != 0:
             raise OSError("EXIT_FILE_ACCESS was not acknowledged")
         return True
     except OSError as exc:

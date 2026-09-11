@@ -84,6 +84,7 @@ def main() -> None:
                 self.fail_path = fail_path
                 self.break_after_failure = break_after_failure
                 self.broken = False
+                self.read_timeouts = []
 
             def open_path(self, path):
                 self.paths.append(path)
@@ -97,7 +98,8 @@ def main() -> None:
                     self.current_path = bytes(packet[3:]).split(b"\0", 1)[0].decode()
                     self.offset = 0
 
-            def read(self, _size):
+            def read(self, _size, timeout_ms=None):
+                self.read_timeouts.append(timeout_ms)
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS:
                     return [0, 0, 0] + [0] * 61
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
@@ -129,6 +131,14 @@ def main() -> None:
                 and (dp20_dump / "profile_Default" / "config.txt").read_text() == "z1 Hello\n"
                 and (dp20_dump / "profile_Default" / "key1.txt").read_text() == "STRING hello",
                 "dp20 mirrors files before safely exiting File Access Mode",
+            )
+            check(
+                fake_dp20.read_timeouts
+                and all(
+                    timeout is not None and timeout <= 2000
+                    for timeout in fake_dp20.read_timeouts
+                ),
+                "dp20 bounds every HID response wait below the connect timeout",
             )
             transient_dp20 = _FakeDP20("/profile_Default/config.txt")
             retry_dp20 = _FakeDP20()
@@ -294,7 +304,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.19", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.20", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":
