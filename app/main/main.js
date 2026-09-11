@@ -140,11 +140,7 @@ async function handleHidRequest(socket, line) {
       })) });
     } else if (msg.op === 'open') {
       const target = Buffer.from(msg.path || '', 'base64').toString('utf8');
-      // Exclusive (seize) open: macOS delivers IOHIDDeviceSetReport reliably
-      // only under sole ownership. Non-exclusive open leaves the OS also
-      // servicing the keyboard, and SET_REPORT then times out with
-      // kIOReturnTimeout (0xE00002D6) partway through a profile mirror.
-      const hid = await nodeHid.HIDAsync.open(target, { nonExclusive: false });
+      const hid = await nodeHid.HIDAsync.open(target, { nonExclusive: true });
       const handle = nextHidHandle++;
       hidHandles.set(handle, hid);
       respond({ handle });
