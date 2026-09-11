@@ -104,7 +104,7 @@ def main() -> None:
                     if self.current_path == self.fail_path:
                         self.broken = self.break_after_failure
                         raise OSError("forced file read failure")
-                    status = 0 if self.current_path in self.files else 1
+                    status = 0 if self.current_path in self.files else 4
                     return [0, 0, status] + [0] * 61
                 content = self.files[self.current_path]
                 chunk = content[self.offset:self.offset + 60]
@@ -130,14 +130,38 @@ def main() -> None:
                 and (dp20_dump / "profile_Default" / "key1.txt").read_text() == "STRING hello",
                 "dp20 mirrors files before safely exiting File Access Mode",
             )
+            transient_dp20 = _FakeDP20("/profile_Default/config.txt")
+            retry_dp20 = _FakeDP20()
+            retry_devices = iter((transient_dp20, retry_dp20))
+            dp20_dumpsd.hid.device = lambda: next(retry_devices)
+            transient_dump = root / "transient-dp20-dump"
+            check(
+                dp20_dumpsd.dump_sd(
+                    b"/dev/mock-duckypad", str(transient_dump), str(root / "backup")
+                ),
+                "dp20 retries the complete mirror after a transient HID failure",
+            )
+            check(
+                transient_dp20.commands[-1]
+                == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS
+                and retry_dp20.commands[-1]
+                == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS,
+                "dp20 exits File Access Mode between complete mirror attempts",
+            )
             failing_dp20 = _FakeDP20("/profile_Default/config.txt")
             dp20_dumpsd.hid.device = lambda: failing_dp20
             failed_dump = root / "failed-dp20-dump"
-            check(
-                not dp20_dumpsd.dump_sd(
+            try:
+                dp20_dumpsd.dump_sd(
                     b"/dev/mock-duckypad", str(failed_dump), str(root / "backup")
-                ),
-                "dp20 mirror reports file read failure",
+                )
+                persistent_error = None
+            except OSError as exc:
+                persistent_error = exc
+            check(
+                persistent_error is not None
+                and "forced file read failure" in str(persistent_error),
+                "dp20 reports the final storage error after bounded retries",
             )
             check(
                 failing_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS,
@@ -147,14 +171,15 @@ def main() -> None:
                 "/profile_Default/config.txt", break_after_failure=True
             )
             recovery_dp20 = _FakeDP20()
-            recovery_devices = iter((broken_dp20, recovery_dp20))
+            recovered_dp20 = _FakeDP20()
+            recovery_devices = iter((broken_dp20, recovery_dp20, recovered_dp20))
             dp20_dumpsd.hid.device = lambda: next(recovery_devices)
             retry_dump = root / "retry-dp20-dump"
             check(
-                not dp20_dumpsd.dump_sd(
+                dp20_dumpsd.dump_sd(
                     b"/dev/mock-duckypad", str(retry_dump), str(root / "backup")
                 ),
-                "dp20 mirror reports a stale HID handle",
+                "dp20 retries the mirror after replacing a stale HID handle",
             )
             check(
                 recovery_dp20.commands
@@ -198,6 +223,24 @@ def main() -> None:
             check(
                 connected["connected"] and connected["fw_version"] == "3.1.8",
                 "connect uses the device selected by the preceding scan",
+            )
+            error_service = CoreService()
+            error_service.device_scan()
+
+            def failed_dump(*_args):
+                raise OSError("HID open file for read failed: 4")
+
+            dp20_dumpsd.dump_sd = failed_dump
+            try:
+                error_service.device_connect("01020304")
+                storage_error = None
+            except CoreError as exc:
+                storage_error = exc
+            check(
+                storage_error is not None
+                and storage_error.data["detail"]
+                == "HID open file for read failed: 4",
+                "connect surfaces the final profile storage failure",
             )
         finally:
             service_module.hid_op.get_duckypad_path = original_paths
@@ -251,7 +294,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.18", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.19", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":

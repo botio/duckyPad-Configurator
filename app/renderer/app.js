@@ -15,7 +15,12 @@
   async function call(method, params = {}) {
     if (!core) throw { message: 'This UI runs inside the Electron app.' };
     try { return await core.call(method, params); }
-    catch (error) { toast(`${error.message || 'Core request failed'}${error.data?.line >= 0 ? ` · line ${error.data.line}` : ''}`); throw error; }
+    catch (error) {
+      const message = error.message || 'Core request failed';
+      const line = error.data?.line >= 0 ? `line ${error.data.line}` : '';
+      toast([message, line, error.data?.detail].filter(Boolean).join(' · '));
+      throw error;
+    }
   }
   function show(view) {
     $('boot-view').classList.toggle('hidden', view !== 'boot');

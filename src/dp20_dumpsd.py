@@ -32,10 +32,11 @@ def hid_dump_file(sd_file_path, hid_obj, missing_ok=False):
     duckypad_to_pc_buf = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
     if len(duckypad_to_pc_buf) != DUCKYPAD_TO_PC_HID_BUF_SIZE:
         raise OSError("HID open file response is incomplete")
-    if duckypad_to_pc_buf[2] != 0:
-        if missing_ok:
+    status = duckypad_to_pc_buf[2]
+    if status != 0:
+        if missing_ok and status in (4, 5):
             return None
-        raise OSError(f"HID open file for read failed: {duckypad_to_pc_buf[2]}")
+        raise OSError(f"HID open file for read failed: {status}")
 
     all_data = bytearray()
     while True:
@@ -44,7 +45,11 @@ def hid_dump_file(sd_file_path, hid_obj, missing_ok=False):
         duckypad_to_pc_buf = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
         if len(duckypad_to_pc_buf) != DUCKYPAD_TO_PC_HID_BUF_SIZE:
             raise OSError("HID read file response is incomplete")
+        if duckypad_to_pc_buf[1] != 0:
+            raise OSError(f"HID read file failed: {duckypad_to_pc_buf[1]}")
         chunk_size = duckypad_to_pc_buf[2]
+        if chunk_size > 60:
+            raise OSError(f"HID read file returned invalid chunk size: {chunk_size}")
         if chunk_size == 0:
             return bytes(all_data)
         all_data.extend(duckypad_to_pc_buf[3:3 + chunk_size])
@@ -88,13 +93,13 @@ def _exit_file_access_mode(hid_obj):
         print("DP20 direct mirror completed but could not exit File Access Mode:", exc)
         return False
 
-def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_obj=None):
-    """Build a DP20 profile mirror without the firmware's fatal DUMP_SD walker."""
-    del backup_dir_path
-    shutil.rmtree(dump_dir_path, ignore_errors=True)
-    dp20_h = hid.device()
+def _dump_sd_once(dp_path, dump_dir_path, tk_root_obj, ui_text_obj):
+    dp20_h = None
     opened = False
+    failure = None
+    exited = True
     try:
+        dp20_h = hid.device()
         dp20_h.open_path(dp_path)
         opened = True
         profile_info = hid_dump_file(f"/{profile_info_dot_txt}", dp20_h)
@@ -105,22 +110,44 @@ def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_o
         header = hid_dump_file(f"/{user_header_dot_txt}", dp20_h, missing_ok=True)
         if header is not None:
             save_to_file("", dump_dir_path, user_header_dot_txt, header)
-        return True
     except OSError as exc:
-        print("DP20 direct file mirror failed:", exc)
-        return False
+        failure = exc
     finally:
-        exited = _exit_file_access_mode(dp20_h) if opened else True
-        dp20_h.close()
+        if dp20_h is not None:
+            exited = _exit_file_access_mode(dp20_h) if opened else True
+            dp20_h.close()
         if opened and not exited:
             recovery_h = None
             try:
                 recovery_h = hid.device()
                 recovery_h.open_path(dp_path)
-                _exit_file_access_mode(recovery_h)
+                exited = _exit_file_access_mode(recovery_h)
             except OSError as exc:
                 print("DP20 File Access Mode recovery failed:", exc)
+                exited = False
             finally:
                 if recovery_h is not None:
                     recovery_h.close()
+
+    if failure is not None:
+        raise failure
+    if not exited:
+        raise OSError("EXIT_FILE_ACCESS failed on both HID handles")
+
+
+def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_obj=None):
+    """Build a DP20 profile mirror, retrying the whole transaction on HID failure."""
+    del backup_dir_path
+    last_error = None
+    for attempt in range(1, 4):
+        shutil.rmtree(dump_dir_path, ignore_errors=True)
+        try:
+            _dump_sd_once(dp_path, dump_dir_path, tk_root_obj, ui_text_obj)
+            return True
+        except OSError as exc:
+            last_error = exc
+            print(f"DP20 direct file mirror attempt {attempt}/3 failed:", exc)
+            if attempt < 3:
+                time.sleep(0.15)
+    raise OSError(f"DP20 profile mirror failed after 3 attempts: {last_error}") from last_error
 

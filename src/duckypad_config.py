@@ -594,8 +594,16 @@ def connect_button_click():
         THIS_DUCKYPAD.connection_type = THIS_DUCKYPAD.usbmsc
     elif user_selected_dp['dp_model'] == DP_MODEL_OG_DUCKYPAD:
         hide_relf()
-        if dp20_dumpsd.dump_sd(user_selected_dp["hid_path"], hid_dump_path, backup_path, root, dp_root_folder_display) is False:
-            messagebox.showerror("Error", "Empty HID response!\n\nTry a different USB Port\nOr a USB Hub")
+        try:
+            dp20_dumpsd.dump_sd(
+                user_selected_dp["hid_path"],
+                hid_dump_path,
+                backup_path,
+                root,
+                dp_root_folder_display,
+            )
+        except OSError as exc:
+            messagebox.showerror("Error", f"Could not read profile storage:\n\n{exc}")
             return
         select_root_folder(hid_dump_path, is_dir_for_dp24=False)
         THIS_DUCKYPAD.connection_type = THIS_DUCKYPAD.hidmsg

@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.18"
+APP_VERSION = "5.0.19"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -258,8 +258,14 @@ class CoreService:
         import dp20_dumpsd
         dump = Path(backup_path).parent / "hid_dump"
         ensure_dir(str(dump.parent))
-        if not dp20_dumpsd.dump_sd(info["hid_path"], str(dump), backup_path, None, None):
-            raise CoreError(-32001, "Could not read the duckyPad 2020 profile storage", {"stage": "read"})
+        try:
+            dp20_dumpsd.dump_sd(info["hid_path"], str(dump), backup_path, None, None)
+        except OSError as exc:
+            raise CoreError(
+                -32001,
+                "Could not read the duckyPad 2020 profile storage",
+                {"stage": "read", "detail": str(exc)},
+            ) from exc
         self.device.connection_type = self.device.hidmsg
         return self._connect_folder(dump, "dp20", source="device")
 
