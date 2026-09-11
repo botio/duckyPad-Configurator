@@ -91,8 +91,10 @@ def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_o
     del backup_dir_path
     shutil.rmtree(dump_dir_path, ignore_errors=True)
     dp20_h = hid.device()
+    opened = False
     try:
         dp20_h.open_path(dp_path)
+        opened = True
         profile_info = hid_dump_file(f"/{profile_info_dot_txt}", dp20_h)
         save_to_file("", dump_dir_path, profile_info_dot_txt, profile_info)
         for profile_name in _profile_names(profile_info):
@@ -101,11 +103,12 @@ def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_o
         header = hid_dump_file(f"/{user_header_dot_txt}", dp20_h, missing_ok=True)
         if header is not None:
             save_to_file("", dump_dir_path, user_header_dot_txt, header)
-        _exit_file_access_mode(dp20_h)
         return True
     except OSError as exc:
         print("DP20 direct file mirror failed:", exc)
         return False
     finally:
+        if opened:
+            _exit_file_access_mode(dp20_h)
         dp20_h.close()
 

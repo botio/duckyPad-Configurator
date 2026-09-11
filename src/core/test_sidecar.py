@@ -76,11 +76,12 @@ def main() -> None:
                 "/user_header.txt": b"// header\n",
             }
 
-            def __init__(self):
+            def __init__(self, fail_path=None):
                 self.paths = []
                 self.commands = []
                 self.current_path = None
                 self.offset = 0
+                self.fail_path = fail_path
 
             def open_path(self, path):
                 self.paths.append(path)
@@ -96,6 +97,8 @@ def main() -> None:
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS:
                     return [0, 0, 0] + [0] * 61
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
+                    if self.current_path == self.fail_path:
+                        raise OSError("forced file read failure")
                     status = 0 if self.current_path in self.files else 1
                     return [0, 0, status] + [0] * 61
                 content = self.files[self.current_path]
@@ -121,6 +124,19 @@ def main() -> None:
                 and (dp20_dump / "profile_Default" / "config.txt").read_text() == "z1 Hello\n"
                 and (dp20_dump / "profile_Default" / "key1.txt").read_text() == "STRING hello",
                 "dp20 mirrors files before safely exiting File Access Mode",
+            )
+            failing_dp20 = _FakeDP20("/profile_Default/config.txt")
+            dp20_dumpsd.hid.device = lambda: failing_dp20
+            failed_dump = root / "failed-dp20-dump"
+            check(
+                not dp20_dumpsd.dump_sd(
+                    b"/dev/mock-duckypad", str(failed_dump), str(root / "backup")
+                ),
+                "dp20 mirror reports file read failure",
+            )
+            check(
+                failing_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS,
+                "dp20 exits File Access Mode after a failed mirror",
             )
         finally:
             dp20_dumpsd.hid.device = original_device
@@ -169,7 +185,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.16", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.17", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":
