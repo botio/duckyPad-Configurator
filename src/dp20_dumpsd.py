@@ -83,8 +83,10 @@ def _exit_file_access_mode(hid_obj):
         response = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
         if len(response) != DUCKYPAD_TO_PC_HID_BUF_SIZE or response[2] != 0:
             raise OSError("EXIT_FILE_ACCESS was not acknowledged")
+        return True
     except OSError as exc:
         print("DP20 direct mirror completed but could not exit File Access Mode:", exc)
+        return False
 
 def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_obj=None):
     """Build a DP20 profile mirror without the firmware's fatal DUMP_SD walker."""
@@ -108,7 +110,17 @@ def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_o
         print("DP20 direct file mirror failed:", exc)
         return False
     finally:
-        if opened:
-            _exit_file_access_mode(dp20_h)
+        exited = _exit_file_access_mode(dp20_h) if opened else True
         dp20_h.close()
+        if opened and not exited:
+            recovery_h = None
+            try:
+                recovery_h = hid.device()
+                recovery_h.open_path(dp_path)
+                _exit_file_access_mode(recovery_h)
+            except OSError as exc:
+                print("DP20 File Access Mode recovery failed:", exc)
+            finally:
+                if recovery_h is not None:
+                    recovery_h.close()
 

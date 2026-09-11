@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.17"
+APP_VERSION = "5.0.18"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -93,6 +93,7 @@ class CoreService:
         self.stdlib_lines: list[str] = self._load_stdlib()
         self.selected_profile: str | None = None
         self.update = {"app": 2, "app_latest": None, "firmware": 2, "firmware_latest": None}
+        self._scanned_devices: dict[str, dict[str, Any]] = {}
 
     def dispatch(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
@@ -206,6 +207,7 @@ class CoreService:
             return None
 
     def device_scan(self) -> dict[str, Any]:
+        self._scanned_devices = {}
         try:
             paths = hid_op.get_duckypad_path()
         except (ImportError, OSError) as exc:
@@ -214,20 +216,38 @@ class CoreService:
             return _result(devices=[], hint="not_found")
         found, errors = hid_op.probe_duckypad_paths(paths)
         if found:
-            return _result(devices=[self._device_summary(device) for device in found], hint=None, probe_errors=errors or None)
+            devices = []
+            for device in found:
+                summary = self._device_summary(device)
+                devices.append(summary)
+                self._scanned_devices[summary["id"]] = device
+            return _result(devices=devices, hint=None, probe_errors=errors or None)
         if errors:
             hint = "permissions" if sys.platform == "darwin" else "sudo" if sys.platform.startswith("linux") else "permissions"
             return _result(devices=[], hint=hint, detail=errors[0], compatible_hid_paths=len(paths))
         return _result(devices=[], hint="unresponsive", compatible_hid_paths=len(paths))
 
     def device_connect(self, id: str) -> dict[str, Any]:
-        try:
-            found = hid_op.scan_duckypads() or []
-        except (ImportError, OSError) as exc:
-            raise CoreError(-32001, "Cannot access duckyPad HID device", {"stage": "scan", "detail": str(exc)}) from exc
-        info = next((item for item in found if str(item.get("serial") or item.get("hid_path")) == id), None)
+        info = self._scanned_devices.get(id)
         if info is None:
-            raise CoreError(-32001, "Selected duckyPad is no longer available", {"stage": "scan"})
+            try:
+                found = hid_op.scan_duckypads() or []
+            except (ImportError, OSError) as exc:
+                raise CoreError(
+                    -32001,
+                    "Cannot access duckyPad HID device",
+                    {"stage": "scan", "detail": str(exc)},
+                ) from exc
+            info = next(
+                (
+                    item
+                    for item in found
+                    if str(item.get("serial") or item.get("hid_path")) == id
+                ),
+                None,
+            )
+            if info is None:
+                raise CoreError(-32001, "Selected duckyPad is no longer available", {"stage": "scan"})
         self.device.info_dict = info
         self.device.device_type = info["dp_model"]
         if self.device.device_type == DP_MODEL_DUCKYPAD_PRO:

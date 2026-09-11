@@ -76,17 +76,21 @@ def main() -> None:
                 "/user_header.txt": b"// header\n",
             }
 
-            def __init__(self, fail_path=None):
+            def __init__(self, fail_path=None, break_after_failure=False):
                 self.paths = []
                 self.commands = []
                 self.current_path = None
                 self.offset = 0
                 self.fail_path = fail_path
+                self.break_after_failure = break_after_failure
+                self.broken = False
 
             def open_path(self, path):
                 self.paths.append(path)
 
             def write(self, packet):
+                if self.broken:
+                    raise OSError("stale HID handle")
                 command = packet[2]
                 self.commands.append(command)
                 if command == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
@@ -98,6 +102,7 @@ def main() -> None:
                     return [0, 0, 0] + [0] * 61
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
                     if self.current_path == self.fail_path:
+                        self.broken = self.break_after_failure
                         raise OSError("forced file read failure")
                     status = 0 if self.current_path in self.files else 1
                     return [0, 0, status] + [0] * 61
@@ -138,8 +143,69 @@ def main() -> None:
                 failing_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS,
                 "dp20 exits File Access Mode after a failed mirror",
             )
+            broken_dp20 = _FakeDP20(
+                "/profile_Default/config.txt", break_after_failure=True
+            )
+            recovery_dp20 = _FakeDP20()
+            recovery_devices = iter((broken_dp20, recovery_dp20))
+            dp20_dumpsd.hid.device = lambda: next(recovery_devices)
+            retry_dump = root / "retry-dp20-dump"
+            check(
+                not dp20_dumpsd.dump_sd(
+                    b"/dev/mock-duckypad", str(retry_dump), str(root / "backup")
+                ),
+                "dp20 mirror reports a stale HID handle",
+            )
+            check(
+                recovery_dp20.commands
+                and recovery_dp20.commands[-1]
+                == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS,
+                "dp20 reopens HID to exit File Access Mode",
+            )
         finally:
             dp20_dumpsd.hid.device = original_device
+        original_scan = service_module.hid_op.scan_duckypads
+        original_drive = service_module.hid_op.get_duckypad_drive
+        original_dump = dp20_dumpsd.dump_sd
+        original_backup = service_module.backup_path
+        scanned_info = {
+            "fw_version": "3.1.8",
+            "dp_model": 20,
+            "serial": "01020304",
+            "hid_path": b"/dev/mock-duckypad",
+            "hid_msg": [4, 0, 0, 3, 1, 8, 20, 1, 2, 3, 4] + [0] * 53,
+        }
+        try:
+            service_module.hid_op.get_duckypad_path = lambda: [b"/dev/mock-duckypad"]
+            service_module.hid_op.probe_duckypad_paths = lambda _paths: ([scanned_info], [])
+            service_module.hid_op.get_duckypad_drive = lambda _label: None
+            connect_service = CoreService()
+            scan = connect_service.device_scan()
+            check(scan["devices"][0]["id"] == "01020304", "scan identifies v3.1.8 device")
+            service_module.hid_op.scan_duckypads = lambda: []
+            service_module.backup_path = str(root / "connect-backup")
+
+            def fake_dump(_path, dump_dir, _backup, *_ui):
+                dump_root = Path(dump_dir)
+                profile_dir = dump_root / "profile_Default"
+                profile_dir.mkdir(parents=True)
+                (dump_root / "profile_info.txt").write_text("0 Default\n")
+                (profile_dir / "config.txt").write_text("z1 Hello\n")
+                return True
+
+            dp20_dumpsd.dump_sd = fake_dump
+            connected = connect_service.device_connect("01020304")
+            check(
+                connected["connected"] and connected["fw_version"] == "3.1.8",
+                "connect uses the device selected by the preceding scan",
+            )
+        finally:
+            service_module.hid_op.get_duckypad_path = original_paths
+            service_module.hid_op.probe_duckypad_paths = original_probe
+            service_module.hid_op.scan_duckypads = original_scan
+            service_module.hid_op.get_duckypad_drive = original_drive
+            service_module.backup_path = original_backup
+            dp20_dumpsd.dump_sd = original_dump
         import hid_common
         original_hid_module = hid_common.hid
         original_hidapi_error = hid_common._hidapi_global_error
@@ -185,7 +251,7 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.17", "NDJSON hello")
+        check(response["result"]["sidecar_version"] == "5.0.18", "NDJSON hello")
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":
