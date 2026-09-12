@@ -44,7 +44,20 @@ if not path:
     sys.exit(1)
 
 dev = hid.device()
-dev.open_path(path)
+try:
+    dev.open_path(path)
+except OSError as exc:
+    detail = ""
+    try:
+        import ctypes
+        lib = ctypes.CDLL(hid.__file__)
+        lib.hid_error.restype = ctypes.c_wchar_p
+        lib.hid_error.argtypes = [ctypes.c_void_p]
+        detail = str(lib.hid_error(None))
+    except Exception:
+        pass
+    print(f"OPEN FAILED: {exc}\nhidapi: {detail}")
+    sys.exit(5)
 print("opened", path)
 
 # OPEN /profile_info.txt
