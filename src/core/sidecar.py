@@ -39,7 +39,8 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _stop)
     if hasattr(signal, "SIGINT"):
         signal.signal(signal.SIGINT, _stop)
-    service = CoreService(emit=_emit)
+    with contextlib.redirect_stdout(sys.stderr):
+        service = CoreService(emit=_emit)
     for raw in sys.stdin:
         if not _running:
             break

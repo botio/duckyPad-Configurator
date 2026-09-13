@@ -412,17 +412,27 @@ def main() -> None:
             check(_listen is None, "hid listen-access request is a no-op off macOS")
         else:
             check(_listen is None or isinstance(_listen, bool), "hid listen-access request is safe")
-        sidecar = subprocess.Popen([sys.executable, str(ROOT / "core" / "sidecar.py")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        assert sidecar.stdin and sidecar.stdout
-        sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
-        sidecar.stdin.flush()
-        response = json.loads(sidecar.stdout.readline())
+        sidecar = subprocess.run(
+            [sys.executable, str(ROOT / "core" / "sidecar.py")],
+            input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "hello", "params": {}}) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env={
+                **os.environ,
+                "HOME": temporary,
+                "XDG_DATA_HOME": temporary,
+                "APPDATA": temporary,
+                "LOCALAPPDATA": temporary,
+            },
+        )
+        check(sidecar.returncode == 0, f"sidecar exits cleanly: {sidecar.stderr if sidecar.returncode else ''}")
+        response = json.loads(sidecar.stdout)
         check(
             response["jsonrpc"] == "2.0" and response["id"] == 1
             and "result" in response and "error" not in response,
-            "NDJSON hello response correlates with request",
+            "fresh-install stdout contains only the correlated JSON-RPC response",
         )
-        sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":
     main()

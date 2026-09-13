@@ -22,7 +22,7 @@ Full device instructions: [duckyPad documentation](https://dekunukem.github.io/d
 
 Version 5.0.24 fixes `HID read file returned invalid chunk size: 61`. A 64-byte file-read report has a 3-byte header and up to 61 bytes of file data; earlier versions incorrectly rejected full-size chunks. This parser fix requires only a Configurator update, not an SD format or firmware flash.
 
-Version 5.0.25 stores each DP20 connection's mirror in its own operating-system temporary directory instead of reusing `Application Support/duckypad_config/hid_dump`. Unwritable legacy cache files are left untouched. Disconnecting or switching sessions releases the temporary mirror; saved backups remain in their existing location. Local mirror failures are reported separately from device reads and are not retried as HID failures.
+Version 5.0.26 stores each DP20 connection's mirror in its own operating-system temporary directory instead of reusing `Application Support/duckypad_config/hid_dump`. Unwritable legacy cache files are left untouched. Disconnecting or switching sessions releases the temporary mirror; saved backups remain in their existing location. Local mirror failures are reported separately from device reads and are not retried as HID failures.
 
 ### Feedbacks
 
