@@ -1,9 +1,8 @@
 """User configuration for the duckyPad herdr plugin.
 
-The plugin's daemon currently hard-codes its state->color palette
-(``model.rs``). This module owns a portable, schema-versioned config file
-that the Configurator writes and that the plugin can later read to
-override the palette and to pin an explicit slot -> agent mapping.
+The Configurator writes this schema-versioned file; the Rust bridge reloads
+it on each agent-list poll. Status palette overrides are host-wide, not
+per-profile. Saving colors preserves the existing slot-to-agent pins.
 
 Config location:
     ~/.config/duckyPad/herdr.json        (Linux)
@@ -16,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,8 @@ def _config_dir() -> Path:
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
         return Path(base) / "duckyPad"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "duckyPad"
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "duckyPad"
 
 
@@ -62,14 +64,22 @@ class HerdrConfig:
 
     @classmethod
     def from_json(cls, payload: dict[str, Any]) -> "HerdrConfig":
+        if not isinstance(payload, dict):
+            raise ValueError("herdr config must be an object")
+        if not isinstance(payload.get("colors", {}), dict):
+            raise ValueError("colors must be an object")
+        if not isinstance(payload.get("pinned_slots", {}), dict):
+            raise ValueError("pinned_slots must be an object")
         version = payload.get("schema_version", SCHEMA_VERSION)
         if version != SCHEMA_VERSION:
             raise ValueError(f"unsupported herdr config schema {version}")
         colors: dict[str, list[int]] = {}
         for name, rgb in payload.get("colors", {}).items():
+            if name not in BUILTIN_PALETTE:
+                raise ValueError(f"unknown state {name!r} in colors")
             if not isinstance(rgb, list) or len(rgb) != 3:
                 raise ValueError(f"color for {name!r} must be [r, g, b]")
-            if any(not isinstance(c, int) or not 0 <= c <= 255 for c in rgb):
+            if any(type(c) is not int or not 0 <= c <= 255 for c in rgb):
                 raise ValueError(f"color for {name!r} has an out-of-range channel")
             colors[name] = rgb
         pinned: dict[int, str] = {}
@@ -86,6 +96,12 @@ class HerdrConfig:
 def load() -> HerdrConfig:
     path = config_path()
     if not path.exists():
+        if sys.platform == "darwin":
+            legacy = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "duckyPad" / "herdr.json"
+            if legacy.is_file():
+                config = HerdrConfig.from_json(json.loads(legacy.read_text(encoding="utf-8")))
+                save(config)
+                return config
         return HerdrConfig()
     return HerdrConfig.from_json(json.loads(path.read_text(encoding="utf-8")))
 

@@ -6,7 +6,11 @@ The user-owned component that connects Herdr agent activity to a duckyPad and ro
 
 ## Herdr Mode
 
-A duckyPad operating mode in which supported primary-key input is reserved for Herdr selection and its LED frame is supplied by the Bridge. It is distinct from Profile Mode.
+The duckyPad behavior while a Herdr Profile is selected: the Bridge supplies agent-state LEDs and agent-selection keys, with a separate local F9 key. Starting the Bridge does not select this mode.
+
+## Herdr Profile
+
+A selectable duckyPad profile that enables Herdr Mode rather than DPDS macros. It participates in the same profile list and physical + / − navigation as macro profiles.
 
 ## Profile Mode
 

@@ -2,7 +2,8 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const core = window.core;
-  const state = { session: null, profile: null, keySlot: null, release: false, devices: [], model: 'dp20', saveTimer: null, checkTimer: null, herdr: null, herdrRoot: null };
+  const state = { session: null, profile: null, keySlot: null, release: false, devices: [], model: 'dp20', saveTimer: null, checkTimer: null, herdr: null, herdrRoot: null, palette: null, paletteDirty: false, paletteSaving: false, palettePath: '', paletteError: '' };
+  const HERDR_STATES = ['working', 'blocked', 'done', 'idle', 'unknown'];
   const DP20 = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18];
 
   function toast(message, level = 'error') {
@@ -60,6 +61,9 @@
     for (const profile of state.session.profiles) {
       const button = document.createElement('button'); button.className = `profile ${profile.name === state.session.selected_profile ? 'selected' : ''}`;
       button.textContent = profile.name; button.onclick = () => selectProfile(profile.name); list.append(button);
+      if (profile.kind === 'herdr') {
+        const badge = document.createElement('small'); badge.className = 'profile-kind'; badge.textContent = 'HERDR'; button.append(badge);
+      }
     }
   }
   function renderPad() {
@@ -69,6 +73,11 @@
       const key = state.profile?.keylist[slot]; const button = document.createElement('button');
       button.className = `keycap ${key ? '' : 'empty'} ${state.keySlot === slot ? 'selected' : ''}`;
       button.innerHTML = key ? `<span>${escapeHtml(key.name || '')}</span><small>${escapeHtml(key.name_line2 || '')}</small>` : '<span>—</span>';
+      if (state.profile?.kind === 'herdr') {
+        const position = slots.indexOf(slot);
+        button.classList.remove('empty');
+        button.innerHTML = position === 14 ? '<span>F9</span><small>LOCAL KEY</small>' : `<span>${String(position + 1).padStart(2, '0')}</span><small>AGENT</small>`;
+      }
       button.onclick = () => selectKey(slot); grid.append(button);
     }
     const index = state.session.profiles.findIndex((profile) => profile.name === state.session.selected_profile);
@@ -79,12 +88,19 @@
   function setEnabled(enabled) { for (const id of ['key-name','key-name-2','allow-abort','dont-repeat','key-color','script','clear-key']) $(id).disabled = !enabled; }
   function renderEditor() {
     const key = state.keySlot == null ? null : state.profile?.keylist[state.keySlot];
-    setEnabled(state.keySlot != null);
+    setEnabled(state.keySlot != null && state.profile?.kind !== 'herdr');
     $('key-name').value = key?.name || ''; $('key-name-2').value = key?.name_line2 || '';
     $('allow-abort').checked = Boolean(key?.allow_abort); $('dont-repeat').checked = Boolean(key?.dont_repeat);
     $('key-color').value = colourHex(key?.color || [244, 241, 233]);
     $('script').value = state.release ? (key?.script_on_release || '') : (key?.script || '');
     $('syntax-status').className = 'syntax-status'; $('syntax-status').textContent = state.keySlot == null ? 'Select a key to check its script.' : 'Waiting for edits…';
+    if (state.profile?.kind === 'herdr') {
+      $('script').value = '';
+      $('script').placeholder = 'HERDR PROFILE\n\nKeys 1–14 focus Herdr agents.\nKey 15 sends F9.\n\nUse the pad’s + / − keys to switch profiles.\nThe Bridge controls lights only while this profile is active.\n\nSet the host-wide status palette in the HERDR panel.\nClick SAVE to write this profile to the pad.';
+      $('syntax-status').textContent = 'Bridge-controlled profile · macro editing is disabled.';
+    } else {
+      $('script').placeholder = 'Select a key to edit its duckyScript…';
+    }
   }
   function colourHex(rgb) { return `#${rgb.map((value) => Number(value).toString(16).padStart(2, '0')).join('')}`; }
   function hexColour(hex) { const value = hex.replace('#',''); return [0, 2, 4].map((index) => Number.parseInt(value.slice(index, index + 2), 16)); }
@@ -93,7 +109,7 @@
   }
   function selectKey(slot) { state.keySlot = slot; renderPad(); renderEditor(); }
   function mutableKey() {
-    if (state.keySlot == null) return null;
+    if (state.keySlot == null || state.profile?.kind === 'herdr') return null;
     const current = state.profile.keylist[state.keySlot];
     return current || { index: state.keySlot, name: '', name_line2: '', script: '', script_on_release: '', color: null, allow_abort: false, dont_repeat: false, repeat_ms: null };
   }
@@ -111,7 +127,7 @@
     catch (_) { /* call() already showed the error */ }
   }
   async function checkScript() {
-    if (state.keySlot == null) return;
+    if (state.keySlot == null || state.profile?.kind === 'herdr') return;
     const target = $('syntax-status');
     try { await call('script/check', { script: $('script').value, on_release: state.release ? 1 : 0 }); target.className = 'syntax-status ok'; target.textContent = 'Code seems OK…'; }
     catch (error) { target.className = 'syntax-status error'; target.textContent = `${error.data?.line >= 0 ? `LINE ${error.data.line}: ` : ''}${error.message || 'Syntax error'}`; }
@@ -124,14 +140,40 @@
   }
   function renderHerdr() {
     const status = state.herdr; const panel = $('herdr-panel');
-    if (!status || status.unavailable || !status.env) { panel.classList.add('hidden'); return; }
-    panel.classList.remove('hidden');
-    $('herdr-status').textContent = `DFU: ${status.dfu?.verified === true ? 'verified' : 'not verified'}\nInstall: ${status.env.can_install_plugin ? 'ready' : 'unavailable'}`;
+    const supported = state.session?.connected && state.session.model === 'dp20';
+    panel.classList.toggle('hidden', !supported);
+    if (!supported) return;
+    $('herdr-status').textContent = status?.env
+      ? `DFU: ${status.dfu?.verified === true ? 'verified' : 'not available'}\nInstall: ${status.env.can_install_plugin ? 'ready' : 'unavailable'}`
+      : 'Bridge diagnostics unavailable. You can still create a profile and save its colors.';
+    $('herdr-install').disabled = !status?.env?.can_install_plugin;
+    $('herdr-flash').disabled = status?.dfu?.verified !== true;
+    $('herdr-palette').disabled = !state.palette || state.paletteSaving;
+    $('herdr-save-colors').disabled = !state.palette || !state.paletteDirty || state.paletteSaving;
+    if (state.palette) for (const name of HERDR_STATES) $('herdr-color-' + name).value = colourHex(state.palette[name]);
+    $('herdr-color-status').textContent = state.paletteError || (state.paletteSaving ? 'Saving…' : state.paletteDirty ? 'Unsaved color changes' : state.palette ? 'Host-wide palette · the Bridge reloads colors automatically.' : 'Loading palette…');
+    $('herdr-color-status').title = state.palettePath;
   }
   async function refreshHerdr() {
-    try { state.herdr = await call('herdr/status'); }
-    catch (_) { state.herdr = null; }
+    const statusRequest = call('herdr/status').then((status) => { state.herdr = status; }).catch(() => { state.herdr = null; });
+    if (!state.paletteDirty && !state.paletteSaving) {
+      try {
+        const config = await call('herdr/config_get');
+        if (!state.paletteDirty && !state.paletteSaving) { state.palette = config.colors; state.palettePath = config.config_path; state.paletteError = ''; }
+      } catch (_) { state.paletteError = 'Could not load colors. Refresh to retry.'; }
+    }
+    await statusRequest;
     renderHerdr();
+  }
+  async function saveHerdrColors() {
+    if (!state.palette || state.paletteSaving) return;
+    state.paletteSaving = true; state.paletteError = ''; renderHerdr();
+    try {
+      const config = await call('herdr/config_save', { colors: state.palette });
+      state.palette = config.colors; state.palettePath = config.config_path; state.paletteDirty = false;
+      toast('Herdr colors saved. The Bridge reloads them automatically.', 'ok');
+    } catch (_) { state.paletteError = 'Colors were not saved. Your edits are still here.'; }
+    finally { state.paletteSaving = false; renderHerdr(); }
   }
   async function connectScan() {
     const result = await call('device/scan'); state.devices = result.devices || []; const list = $('device-list'); list.replaceChildren();
@@ -162,6 +204,15 @@
     $('scan-button').onclick = connectScan; $('folder-button').onclick = () => $('model-picker').classList.remove('hidden');
     document.querySelectorAll('[data-model]').forEach((button) => button.onclick = () => connectFolder(button.dataset.model));
     $('new-profile').onclick = async () => { const name = await requestProfileName('New profile'); if (name) await profileAction('profiles/create', { name }); };
+    $('new-herdr-profile').onclick = async () => {
+      const name = await requestProfileName('New Herdr profile', 'Herdr');
+      if (name) { await profileAction('profiles/create', { name, kind: 'herdr' }); state.keySlot = null; render(); toast('Herdr profile added. Click SAVE, then select it on the pad with + / −.', 'ok'); }
+    };
+    for (const name of HERDR_STATES) $('herdr-color-' + name).oninput = (event) => {
+      if (!state.palette || state.paletteSaving) return;
+      state.palette[name] = hexColour(event.target.value); state.paletteDirty = true; state.paletteError = ''; renderHerdr();
+    };
+    $('herdr-save-colors').onclick = saveHerdrColors;
     $('profile-rename').onclick = async () => { if (!state.profile) return; const new_name = await requestProfileName('Rename profile', state.profile.name, 'RENAME'); if (new_name) await profileAction('profiles/rename', { name: state.profile.name, new_name }); };
     $('profile-duplicate').onclick = () => state.profile && profileAction('profiles/duplicate', { name: state.profile.name });
     $('profile-delete').onclick = () => state.profile && confirm(`Delete ${state.profile.name}?`) && profileAction('profiles/delete', { name: state.profile.name });

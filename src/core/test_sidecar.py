@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -17,6 +18,81 @@ def check(condition: bool, label: str) -> None:
     if not condition:
         raise AssertionError(label)
     print(f"PASS {label}")
+
+
+def check_herdr(temporary: str) -> None:
+    import herdr_config
+    import duck_objs
+
+    root = Path(temporary) / "herdr-profiles"
+    ordinary = root / "profile_Herdr"
+    ordinary.mkdir(parents=True)
+    (ordinary / "config.txt").write_text("z1 NORMAL\n", encoding="utf-8")
+    (root / "profile_info.txt").write_text("0 Herdr\n", encoding="utf-8")
+    service = CoreService()
+    service.device_connect_folder(str(root), "dp20")
+    check(service.profiles_get("Herdr")["kind"] == "macro", "a profile name cannot activate Herdr")
+    service.dispatch("profiles/create", {"name": "Bridge", "kind": "herdr"})
+    service.profiles_duplicate("Bridge")
+    service.profiles_rename("Bridge copy", "Dashboard")
+    exported = service.profiles_export(["Dashboard"], temporary)
+    service.profiles_delete("Dashboard")
+    service.profiles_import(exported["path"], "dp20")
+    service.profiles_save(to="device")
+    reopened = CoreService()
+    result = reopened.device_connect_folder(str(root), "dp20")
+    kinds = {profile["name"]: profile["kind"] for profile in result["profiles"]}
+    check(kinds == {"Herdr": "macro", "Bridge": "herdr", "Dashboard": "herdr"}, "Herdr survives duplicate, rename, export/import, save, and reopen")
+    check(reopened.profiles_get("Herdr")["keylist"][0]["name"] == "NORMAL", "ordinary keys survive Herdr creation and saving")
+    for marker, enabled in [("HERDR_PROFILE 1", True), ("HERDR_PROFILE 10", False), ("HERDR_PROFILE 1\nHERDR_PROFILE 0", False)]:
+        (ordinary / "config.txt").write_text(marker + "\n", encoding="utf-8")
+        parsed = duck_objs.dp_profile()
+        parsed.load_from_path(str(ordinary))
+        check(parsed.is_herdr == enabled, f"marker interpretation: {marker!r}")
+    pro = CoreService()
+    pro.device_connect_folder(str(root), "dp24")
+    try:
+        pro.dispatch("profiles/create", {"name": "Unsupported", "kind": "herdr"})
+    except CoreError as error:
+        check(error.code == -32002, "dp24 rejects Herdr creation")
+    else:
+        raise AssertionError("dp24 accepted a Herdr profile")
+
+    path = Path(temporary) / "palette" / "herdr.json"
+    with patch.object(herdr_config, "config_path", return_value=path):
+        herdr_config.save(herdr_config.HerdrConfig(colors={"working": [8, 9, 10]}, pinned_slots={3: "pane-keep"}))
+        colors = service.dispatch("herdr/config_get")["colors"]
+        colors["working"] = [0, 128, 255]
+        service.dispatch("herdr/config_save", {"colors": colors})
+        check(CoreService().dispatch("herdr/config_get")["colors"] == colors, "all five status colors persist across service restart")
+        check(herdr_config.load().pinned_slots == {3: "pane-keep"}, "saving colors preserves agent pins")
+        saved = path.read_bytes()
+        for rgb in ([True, 2, 3], [256, 2, 3], [1.5, 2, 3], [1, 2], {1: 0, 2: 0, 3: 0}):
+            try:
+                service.dispatch("herdr/config_save", {"colors": {**colors, "working": rgb}})
+            except CoreError as error:
+                check(error.code == -32002 and path.read_bytes() == saved, f"invalid RGB leaves palette intact: {rgb!r}")
+            else:
+                raise AssertionError(f"accepted invalid RGB: {rgb!r}")
+        try:
+            service.dispatch("herdr/config_save", {"colors": {**colors, "typo": [1, 2, 3]}})
+        except CoreError as error:
+            check(error.code == -32002 and path.read_bytes() == saved, "unknown status cannot replace the palette")
+        else:
+            raise AssertionError("accepted unknown status")
+
+    if os.name != "nt":
+        home = Path(temporary) / "mac-home"
+        legacy = home / "custom-xdg" / "duckyPad" / "herdr.json"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(json.dumps({"colors": {"done": [20, 30, 40]}, "pinned_slots": {"2": "keep"}}), encoding="utf-8")
+        with patch.object(herdr_config.sys, "platform", "darwin"), patch.object(Path, "home", return_value=home), patch.dict(os.environ, {"XDG_CONFIG_HOME": str(home / "custom-xdg")}):
+            canonical = home / "Library" / "Application Support" / "duckyPad" / "herdr.json"
+            migrated = herdr_config.load()
+            check(herdr_config.config_path() == canonical and json.loads(canonical.read_text()) == migrated.to_json(), "macOS migration writes the exact Rust config path despite XDG override")
+            migrated.colors["done"] = [50, 60, 70]
+            herdr_config.save(migrated)
+            check(herdr_config.load().colors["done"] == [50, 60, 70] and herdr_config.load().pinned_slots == {2: "keep"}, "canonical macOS palette wins over legacy values")
 
 
 def main() -> None:
@@ -412,6 +488,7 @@ def main() -> None:
             check(_listen is None, "hid listen-access request is a no-op off macOS")
         else:
             check(_listen is None or isinstance(_listen, bool), "hid listen-access request is safe")
+        check_herdr(temporary)
         sidecar = subprocess.run(
             [sys.executable, str(ROOT / "core" / "sidecar.py")],
             input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "hello", "params": {}}) + "\n",

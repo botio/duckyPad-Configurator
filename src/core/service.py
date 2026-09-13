@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.26"
+APP_VERSION = "5.0.27"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -125,6 +125,8 @@ class CoreService:
             "herdr/install": self.herdr_install,
             "herdr/uninstall": self.herdr_uninstall,
             "herdr/flash": self.herdr_flash,
+            "herdr/config_get": self.herdr_config_get,
+            "herdr/config_save": self.herdr_config_save,
             "update/check": self.update_check,
         }
         handler = table.get(method)
@@ -166,6 +168,7 @@ class CoreService:
     def _profile_summary(self, profile: duck_objs.dp_profile) -> dict[str, Any]:
         return {
             "name": profile.name,
+            "kind": "herdr" if profile.is_herdr else "macro",
             "key_count": sum(key is not None for key in profile.keylist),
             "bg_color": _colour(profile.bg_color),
             "landscape": profile.is_landscape,
@@ -397,6 +400,7 @@ class CoreService:
         profile = self._get_profile(name)
         return _result(
             name=profile.name,
+            kind="herdr" if profile.is_herdr else "macro",
             bg_color=_colour(profile.bg_color),
             dim_unused=profile.dim_unused,
             is_landscape=profile.is_landscape,
@@ -448,13 +452,18 @@ class CoreService:
         key.dont_repeat = bool(value.get("dont_repeat", False))
         return key
 
-    def profiles_create(self, name: str) -> dict[str, Any]:
+    def profiles_create(self, name: str, kind: str = "macro") -> dict[str, Any]:
         self._require_session()
+        if not isinstance(kind, str) or kind not in {"macro", "herdr"}:
+            raise CoreError(-32002, "kind must be macro or herdr")
+        if kind == "herdr" and self.model == "dp24":
+            raise CoreError(-32002, "Herdr profiles are only supported on the duckyPad 2020")
         name = self._validate_name(name)
         if any(profile.name == name for profile in self.profile_list):
             raise CoreError(-32002, "Profile name already exists")
         profile = duck_objs.dp_profile()
         profile.name = name
+        profile.is_herdr = kind == "herdr"
         self.profile_list.append(profile)
         self.selected_profile = name
         return self.session_state()
@@ -486,6 +495,7 @@ class CoreService:
         copy.is_landscape = source.is_landscape
         copy.is_upper_re_halfstep = source.is_upper_re_halfstep
         copy.is_lower_re_halfstep = source.is_lower_re_halfstep
+        copy.is_herdr = source.is_herdr
         copy.keylist = [self._key_from_json(slot, self._key_json(slot, key)) for slot, key in enumerate(source.keylist)]
         self.profile_list.insert(self.profile_list.index(source) + 1, copy)
         self.selected_profile = candidate
@@ -590,6 +600,8 @@ class CoreService:
                 config.append("UPPER_HS 1\n")
             if profile.is_lower_re_halfstep:
                 config.append("LOWER_HS 1\n")
+            if profile.is_herdr:
+                config.append("HERDR_PROFILE 1\n")
             for slot, key in enumerate(profile.keylist):
                 if key is None:
                     continue
@@ -773,6 +785,37 @@ class CoreService:
         detail = (completed.stdout or "") + (completed.stderr or "")
         self.emit("event/herdr/flash", {"phase": "done", "detail": detail})
         return _result(ok=True, log=detail)
+
+    def herdr_config_get(self) -> dict[str, Any]:
+        import herdr_config
+        try:
+            cfg = herdr_config.load()
+        except Exception as exc:
+            raise CoreError(-32004, "Could not read herdr color configuration", {"detail": str(exc)}) from exc
+        return _result(
+            colors={name: list(rgb) for name, rgb in herdr_config.effective_palette(cfg).items()},
+            config_path=str(herdr_config.config_path()),
+        )
+
+    def herdr_config_save(self, colors: dict[str, Any]) -> dict[str, Any]:
+        import herdr_config
+        if not isinstance(colors, dict):
+            raise CoreError(-32002, "colors must be an object")
+        if set(colors) != set(herdr_config.BUILTIN_PALETTE):
+            raise CoreError(-32002, "colors must contain blocked, working, done, idle, and unknown")
+        try:
+            cfg = herdr_config.load()
+            cfg.colors = colors
+            validated = herdr_config.HerdrConfig.from_json(cfg.to_json())
+            herdr_config.save(validated)
+        except (ValueError, TypeError) as exc:
+            raise CoreError(-32002, "Invalid herdr color configuration", {"detail": str(exc)}) from exc
+        except Exception as exc:
+            raise CoreError(-32004, "Could not save herdr color configuration", {"detail": str(exc)}) from exc
+        return _result(
+            colors={name: list(rgb) for name, rgb in herdr_config.effective_palette(validated).items()},
+            config_path=str(herdr_config.config_path()),
+        )
 
     def update_check(self, include_ts: bool = True) -> dict[str, Any]:
         previous_url = check_update.pc_app_release_url

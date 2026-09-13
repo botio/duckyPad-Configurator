@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-# Verified herdr-capable image (duckyPad repo, commit e6738101).
-HERDR_DFU_NAME = "duckypad_v3.1.0-herdr.dfu"
-HERDR_DFU_SHA256 = "b1ea7431f40045da1cb80e6188df81b11ec9016c76af7ebbd0e897be3b18da96"
+# Verified profile-gated image from the companion duckyPad firmware repository.
+HERDR_DFU_NAME = "duckypad_v3.1.15-herdr.dfu"
+HERDR_DFU_SHA256 = "4b5768fc62a44b9aefd0f5c5b45eff209cd9137a0955f051068a089f5e825e67"
 # Stock rollback image (duckyPad repo).
 STOCK_DFU_NAME = "duckypad_v3.0.4.dfu"
 STOCK_DFU_SHA256 = "f6d8220f88df15da374c2bb1d45bae711fd0f080678b44f9177e3173ded9fa3d"
