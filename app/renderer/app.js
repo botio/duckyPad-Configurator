@@ -5,6 +5,7 @@
   const state = { session: null, profile: null, keySlot: null, release: false, devices: [], model: 'dp20', saveTimer: null, checkTimer: null, herdr: null, herdrRoot: null, palette: null, paletteDirty: false, paletteSaving: false, palettePath: '', paletteError: '' };
   const HERDR_STATES = ['working', 'blocked', 'done', 'idle', 'unknown'];
   const DP20 = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18];
+  const HERDR_F9_SLOT = DP20[DP20.length - 1]; // physical key 15 = canonical slot 18
 
   function toast(message, level = 'error') {
     const target = $('toast');
@@ -77,7 +78,14 @@
       if (state.profile?.kind === 'herdr') {
         const position = slots.indexOf(slot);
         button.classList.remove('empty');
-        button.innerHTML = position === 14 ? '<span>F9</span><small>LOCAL KEY</small>' : `<span>${String(position + 1).padStart(2, '0')}</span><small>AGENT</small>`;
+        if (position === 14) {
+          const hasScript = Boolean(key && ((key.script || '').trim() || (key.script_on_release || '').trim()));
+          button.innerHTML = hasScript
+            ? `<span>${escapeHtml(key.name || 'KEY 15')}</span><small>CUSTOM</small>`
+            : '<span>F9</span><small>DEFAULT</small>';
+        } else {
+          button.innerHTML = `<span>${String(position + 1).padStart(2, '0')}</span><small>AGENT</small>`;
+        }
       }
       button.onclick = () => selectKey(slot); grid.append(button);
     }
@@ -88,17 +96,24 @@
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char])); }
   function setEnabled(enabled) { for (const id of ['key-name','key-name-2','allow-abort','dont-repeat','key-color','script','clear-key']) $(id).disabled = !enabled; }
   function renderEditor() {
+    const herdr = state.profile?.kind === 'herdr';
+    const localKey = herdr && state.keySlot === HERDR_F9_SLOT;
     const key = state.keySlot == null ? null : state.profile?.keylist[state.keySlot];
-    setEnabled(state.keySlot != null && state.profile?.kind !== 'herdr');
+    setEnabled(state.keySlot != null && (!herdr || localKey));
     $('key-name').value = key?.name || ''; $('key-name-2').value = key?.name_line2 || '';
     $('allow-abort').checked = Boolean(key?.allow_abort); $('dont-repeat').checked = Boolean(key?.dont_repeat);
     $('key-color').value = colourHex(key?.color || [244, 241, 233]);
     $('script').value = state.release ? (key?.script_on_release || '') : (key?.script || '');
     $('syntax-status').className = 'syntax-status'; $('syntax-status').textContent = state.keySlot == null ? 'Select a key to check its script.' : 'Waiting for edits…';
-    if (state.profile?.kind === 'herdr') {
-      $('script').value = '';
-      $('script').placeholder = 'HERDR PROFILE\n\nKeys 1–14 focus Herdr agents.\nKey 15 sends F9.\n\nUse the pad’s + / − keys to switch profiles.\nThe Bridge controls lights only while this profile is active.\n\nSet the host-wide status palette in the HERDR panel.\nClick SAVE to write this profile to the pad.';
-      $('syntax-status').textContent = 'Bridge-controlled profile · macro editing is disabled.';
+    if (herdr) {
+      if (localKey) {
+        $('script').placeholder = 'Leave both press and release scripts empty for the local F9 shortcut. Enter duckyScript to run a custom macro instead.';
+        $('syntax-status').textContent = 'Key 15 · both scripts empty: F9; either script set: custom.';
+      } else {
+        $('script').value = '';
+        $('script').placeholder = 'HERDR PROFILE\n\nKeys 1–14 focus Herdr agents.\nKey 15 is your local key (F9 by default).\n\nUse the pad’s + / − keys to switch profiles.\nThe Bridge controls lights only while this profile is active.\n\nSet the host-wide status palette in the HERDR panel.\nClick SAVE to write this profile to the pad.';
+        $('syntax-status').textContent = 'Agent key · bridge-controlled, not editable.';
+      }
     } else {
       $('script').placeholder = 'Select a key to edit its duckyScript…';
     }
@@ -110,7 +125,7 @@
   }
   function selectKey(slot) { state.keySlot = slot; renderPad(); renderEditor(); }
   function mutableKey() {
-    if (state.keySlot == null || state.profile?.kind === 'herdr') return null;
+    if (state.keySlot == null || (state.profile?.kind === 'herdr' && state.keySlot !== HERDR_F9_SLOT)) return null;
     const current = state.profile.keylist[state.keySlot];
     return current || { index: state.keySlot, name: '', name_line2: '', script: '', script_on_release: '', color: null, allow_abort: false, dont_repeat: false, repeat_ms: null };
   }
@@ -119,6 +134,7 @@
     clearTimeout(state.checkTimer); state.checkTimer = setTimeout(checkScript, 400);
   }
   async function saveKey() {
+    clearTimeout(state.saveTimer);
     const key = mutableKey(); if (!key || !state.profile) return;
     key.name = $('key-name').value.trim(); key.name_line2 = $('key-name-2').value.trim(); key.allow_abort = $('allow-abort').checked; key.dont_repeat = $('dont-repeat').checked;
     key.color = hexColour($('key-color').value);
@@ -128,7 +144,7 @@
     catch (_) { /* call() already showed the error */ }
   }
   async function checkScript() {
-    if (state.keySlot == null || state.profile?.kind === 'herdr') return;
+    if (state.keySlot == null || (state.profile?.kind === 'herdr' && state.keySlot !== HERDR_F9_SLOT)) return;
     const target = $('syntax-status');
     try { await call('script/check', { script: $('script').value, on_release: state.release ? 1 : 0 }); target.className = 'syntax-status ok'; target.textContent = 'Code seems OK…'; }
     catch (error) { target.className = 'syntax-status error'; target.textContent = `${error.data?.line >= 0 ? `LINE ${error.data.line}: ` : ''}${error.message || 'Syntax error'}`; }
@@ -222,7 +238,7 @@
     $('profile-down').onclick = () => state.profile && profileAction('profiles/move', { name: state.profile.name, direction: 'down' });
     $('previous-profile').onclick = () => cycleProfile(-1); $('next-profile').onclick = () => cycleProfile(1);
     for (const id of ['key-name','key-name-2','allow-abort','dont-repeat','key-color','script']) $(id).addEventListener(id === 'script' ? 'input' : 'change', scheduleKeySave);
-    document.querySelectorAll('input[name="script-mode"]').forEach((input) => input.onchange = () => { state.release = input.value === 'release'; renderEditor(); });
+    document.querySelectorAll('input[name="script-mode"]').forEach((input) => input.onchange = async () => { await saveKey(); state.release = input.value === 'release'; renderEditor(); });
     $('clear-key').onclick = async () => { if (state.keySlot == null || !state.profile) return; state.profile.keylist[state.keySlot] = null; state.session = await call('profiles/update', { name: state.profile.name, patch: { keylist: state.profile.keylist } }); renderPad(); renderEditor(); };
     $('save-button').onclick = async () => { await saveKey(); await call('profiles/save', { name: state.profile?.name || null, to: 'device' }); toast('Saved', 'ok'); };
     $('backup-button').onclick = () => call('profiles/save', { name: state.profile?.name || null, to: 'backup' }).then((r) => toast(`Backup: ${r.path}`, 'ok'));

@@ -58,6 +58,44 @@ def check_herdr(temporary: str) -> None:
     else:
         raise AssertionError("dp24 accepted a Herdr profile")
 
+    # Key 15 (canonical slot 18) in a Herdr profile is user-configurable: a
+    # script writes key15.dsb so the firmware runs it; clearing it removes the
+    # file so the firmware keeps the F9 shortcut.
+    key15_root = Path(temporary) / "key15-script"
+    bridge_profile = key15_root / "profile_Herdr"
+    bridge_profile.mkdir(parents=True)
+    (bridge_profile / "config.txt").write_text("HERDR_PROFILE 1\n", encoding="utf-8")
+    (key15_root / "profile_info.txt").write_text("0 Herdr\n", encoding="utf-8")
+    key15_service = CoreService()
+    key15_service.device_connect_folder(str(key15_root), "dp20")
+    key15_service.profiles_save(to="device")
+    check(not (bridge_profile / "key15.dsb").exists(), "saving an untouched key 15 retains F9")
+    key15_service.profiles_update("Herdr", {"key": {"index": 18, "script": "STRING hello", "name": "PTT"}})
+    key15_service.profiles_save(to="device")
+    check((bridge_profile / "key15.dsb").exists() and (bridge_profile / "key15.txt").read_text() == "STRING hello", "key 15 script writes key15.dsb and key15.txt")
+    reopened15 = CoreService()
+    reopened15.device_connect_folder(str(key15_root), "dp20")
+    reloaded = reopened15.profiles_get("Herdr")
+    check(reloaded["kind"] == "herdr" and reloaded["keylist"][18]["script"] == "STRING hello", "key 15 script round-trips through save and reopen")
+    check([i for i, k in enumerate(reloaded["keylist"]) if k is not None] == [18], "only key 15 is assigned in the herdr profile")
+    cleared = list(reloaded["keylist"])
+    cleared[18] = None
+    reopened15.profiles_update("Herdr", {"keylist": cleared})
+    reopened15.profiles_save(to="device")
+    check(not (bridge_profile / "key15.dsb").exists(), "clearing key 15 reverts to the F9 default")
+    reopened15.profiles_update("Herdr", {"key": {"index": 18, "script": " \n", "script_on_release": "\t", "name": "LOCAL", "color": [12, 34, 56]}})
+    reopened15.profiles_save(to="device")
+    metadata15 = CoreService()
+    metadata15.device_connect_folder(str(key15_root), "dp20")
+    local_key = metadata15.profiles_get("Herdr")["keylist"][18]
+    check(local_key["name"] == "LOCAL" and local_key["color"] == [12, 34, 56], "empty local scripts preserve key metadata")
+    check(not (bridge_profile / "key15.dsb").exists() and not (bridge_profile / "key15-release.dsb").exists(), "whitespace-only local scripts retain F9")
+    metadata15.profiles_update("Herdr", {"key": {"index": 18, "script": "", "script_on_release": "STRING released"}})
+    metadata15.profiles_save(to="device")
+    release15 = CoreService()
+    release15.device_connect_folder(str(key15_root), "dp20")
+    check((bridge_profile / "key15-release.dsb").exists() and release15.profiles_get("Herdr")["keylist"][18]["script_on_release"] == "STRING released", "release-only local macro survives save and reopen")
+
     path = Path(temporary) / "palette" / "herdr.json"
     with patch.object(herdr_config, "config_path", return_value=path):
         herdr_config.save(herdr_config.HerdrConfig(colors={"working": [8, 9, 10]}, pinned_slots={3: "pane-keep"}))

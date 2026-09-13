@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.28"
+APP_VERSION = "5.0.29"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -611,9 +611,10 @@ class CoreService:
                 (profile_dir / f"key{device_index}.txt").write_text(key.script or "", encoding="utf-8", newline="")
                 if key.script_on_release:
                     (profile_dir / f"key{device_index}-release.txt").write_text(key.script_on_release, encoding="utf-8", newline="")
-                (profile_dir / f"key{device_index}.dsb").write_bytes(compiled[(profile.name, slot, False)])
-                if key.script_on_release:
-                    (profile_dir / f"key{device_index}-release.dsb").write_bytes(compiled[(profile.name, slot, True)])
+                for on_release, suffix in ((False, ""), (True, "-release")):
+                    bytecode = compiled.get((profile.name, slot, on_release))
+                    if bytecode is not None:
+                        (profile_dir / f"key{device_index}{suffix}.dsb").write_bytes(bytecode)
                 if key.color is not None:
                     config.append("SWCOLOR_%d %d %d %d\n" % (device_index, *key.color))
             (profile_dir / "config.txt").write_text("".join(config), encoding="utf-8", newline="")
@@ -629,6 +630,10 @@ class CoreService:
                     continue
                 device_index = self._device_key_index(slot)
                 if device_index is None:
+                    continue
+                # Empty Herdr local scripts retain firmware F9, without discarding
+                # the key's name, colors or flags on save/import/export.
+                if profile.is_herdr and device_index == 15 and not (key.script or "").strip() and not (key.script_on_release or "").strip():
                     continue
                 try:
                     output[(profile.name, slot, False)] = self._compile(key, key.script or "")

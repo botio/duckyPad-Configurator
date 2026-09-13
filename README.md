@@ -32,7 +32,7 @@ Version 5.0.26 stores each DP20 connection's mirror in its own operating-system 
 
 ## herdr Integration
 
-The Configurator configures the [duckyPad × Herdr Bridge](https://github.com/botio/duckyPad-herdr/tree/master/herdr-ducky-pad). In a selected Herdr profile, keys 1–14 show agent state and focus the corresponding pane; key 15 remains a local F9 key.
+The Configurator configures the [duckyPad × Herdr Bridge](https://github.com/botio/duckyPad-herdr/tree/master/herdr-ducky-pad). In a selected Herdr profile, keys 1–14 show agent state and focus the corresponding pane; key 15 is your local shortcut key — **F9 by default**, or any duckyScript you assign to it.
 
 ### What it does
 
@@ -42,11 +42,12 @@ The Configurator configures the [duckyPad × Herdr Bridge](https://github.com/bo
 
 ### Using it
 
-1. Use **Configurator 5.0.28+** with **firmware 3.1.15+** on the original duckyPad. The **HERDR** sidebar is visible even when the Bridge is not installed.
+1. Use **Configurator 5.0.29+** with **firmware 3.1.16+** on the original duckyPad. The **HERDR** sidebar is visible even when the Bridge is not installed.
 2. Click **ADD HERDR PROFILE**, choose a name, then click the bottom **SAVE** button to write it to the pad.
 3. On the physical pad, use **+ / −** to select that profile. Starting the Bridge no longer takes over ordinary profiles. Switching away restores normal macro behavior.
-4. Change **Working, Blocked, Done, Idle, Unknown** in **STATUS COLORS**, then click **SAVE COLORS**. These colors are host-wide and reload automatically in the running Bridge; they are separate from the pad's profile SAVE operation.
-5. Use **INSTALL** to install the Bridge when its dependencies are available. **FLASH** uses a locally available, checksum-verified image; **STOCK** restores the stock image. Both require confirmation. **↻** refreshes diagnostics without discarding unsaved color edits.
+4. (Optional) Click **key 15** in the Herdr profile, enter duckyScript in **ON PRESS** or **ON RELEASE**, then click **SAVE**. Leave both scripts empty to keep F9; it stays your local key and is never an agent slot.
+5. Change **Working, Blocked, Done, Idle, Unknown** in **STATUS COLORS**, then click **SAVE COLORS**. These colors are host-wide and reload automatically in the running Bridge; they are separate from the pad's profile SAVE operation.
+6. Use **INSTALL** to install the Bridge when its dependencies are available. **FLASH** uses a locally available, checksum-verified image; **STOCK** restores the stock image. Both require confirmation. **↻** refreshes diagnostics without discarding unsaved color edits.
 
 The SD marker is `HERDR_PROFILE 1` in that profile's `config.txt`. A profile's name does not enable Herdr. Copy, rename, save, backup, ZIP export/import, and reopening preserve its type. A microSD card containing the profile is required.
 
@@ -81,10 +82,10 @@ On macOS, the App now uses the same `Library/Application Support` path as the Ru
 
 ### Firmware
 
-Profile-based ownership requires `duckypad_v3.1.15-herdr.dfu` or newer. Older Herdr firmware can still auto-take over the pad, regardless of the profile you created. Stock `duckypad_v3.0.4.dfu` has no Herdr support.
+Profile-based ownership requires `duckypad_v3.1.16-herdr.dfu` or newer for the configurable key 15. `v3.1.15-herdr.dfu` keeps the profile model but key 15 is fixed to F9. Older Herdr firmware can still auto-take over the pad, regardless of the profile you created. Stock `duckypad_v3.0.4.dfu` has no Herdr support.
 
 ```
-dfu-util --device=0483:df11 -a 0 -D <path-to>/duckypad_v3.1.15-herdr.dfu
+dfu-util --device=0483:df11 -a 0 -D <path-to>/duckypad_v3.1.16-herdr.dfu
 ```
 
 Put the pad in DFU mode (hold the DFU button while plugging it in) and run the command. Keep the stock `duckypad_v3.0.4.dfu` image for rollback.

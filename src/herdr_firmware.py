@@ -2,8 +2,8 @@
 
 The Configurator never flashes firmware by itself; it guides the user through
 the DFU procedure and, when ``dfu-util`` is present, runs the exact command
-against a **verified** ``.dfu`` image. The verified image is the
-``v3.1.0-herdr`` build that ships in the duckyPad repo.
+against a **verified** ``.dfu`` image. The expected filename and checksum below
+pin the companion duckyPad repository's release image.
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from pathlib import Path
 
 
 # Verified profile-gated image from the companion duckyPad firmware repository.
-HERDR_DFU_NAME = "duckypad_v3.1.15-herdr.dfu"
-HERDR_DFU_SHA256 = "4b5768fc62a44b9aefd0f5c5b45eff209cd9137a0955f051068a089f5e825e67"
+HERDR_DFU_NAME = "duckypad_v3.1.16-herdr.dfu"
+HERDR_DFU_SHA256 = "283f25d9875bdd835d8aa220170b5021f85f87e39ffdf594dcf4cf7bd412a63f"
 # Stock rollback image (duckyPad repo).
 STOCK_DFU_NAME = "duckypad_v3.0.4.dfu"
 STOCK_DFU_SHA256 = "f6d8220f88df15da374c2bb1d45bae711fd0f080678b44f9177e3173ded9fa3d"
