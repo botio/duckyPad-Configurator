@@ -98,6 +98,11 @@ HID_RESPONSE_EOF = 3
 # the core indefinitely (and outlive the Electron request timeout).
 DP20_RESPONSE_TIMEOUT_MS = 1500
 
+# Recursive directory deletion (and other bulk SD metadata operations) run
+# synchronously on the pad over SPI and can legitimately take several seconds.
+# They get a generous ceiling; per-chunk file writes stay on the fast bound.
+DP20_SLOW_TIMEOUT_MS = 30000
+
 # Unsolicited herdr key-state IN report discriminator (firmware hid_task.h
 # HERDR_IN_KEY_STATE). A concurrent Bridge poll can interleave these with a
 # SAVE acknowledgement; they must be discarded, not mistaken for an ACK.

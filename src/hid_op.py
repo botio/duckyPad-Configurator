@@ -94,7 +94,7 @@ def split_file_to_chunks(path, chunk_size=60):
     chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
     return chunks
 
-def hid_write_file(file_op, hid_obj, timeout_ms=DP20_RESPONSE_TIMEOUT_MS, progress=None):
+def hid_write_file(file_op, hid_obj, timeout_ms=DP20_SLOW_TIMEOUT_MS, progress=None):
     pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
     pc_to_duckypad_buf[2] = HID_COMMAND_OPEN_FILE_FOR_WRITING
     file_path = make_hid_file_path(file_op)
@@ -111,7 +111,7 @@ def hid_write_file(file_op, hid_obj, timeout_ms=DP20_RESPONSE_TIMEOUT_MS, progre
         this_chunk_buf[2] = HID_COMMAND_WRITE_FILE
         write_bytes_into_buf(this_chunk, this_chunk_buf)
         # print(this_chunk_buf)
-        response = hid_txrx_bounded(this_chunk_buf, hid_obj, f"WRITE_FILE {file_path}", timeout_ms)
+        response = hid_txrx_bounded(this_chunk_buf, hid_obj, f"WRITE_FILE {file_path}", DP20_RESPONSE_TIMEOUT_MS)
         check_response(response, f"WRITE_FILE {file_path}")
         if progress is not None:
             progress(file_op.source_path)
@@ -122,7 +122,7 @@ def hid_write_file(file_op, hid_obj, timeout_ms=DP20_RESPONSE_TIMEOUT_MS, progre
     check_response(response, f"CLOSE_FILE {file_path}")
 
 
-def do_hid_fileop(this_op, hid_obj, timeout_ms=DP20_RESPONSE_TIMEOUT_MS, progress=None):
+def do_hid_fileop(this_op, hid_obj, timeout_ms=DP20_SLOW_TIMEOUT_MS, progress=None):
     pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
 
     if this_op.action == this_op.delete_file:
@@ -198,6 +198,10 @@ def duckypad_file_sync_hid(hid_path, orig_path, modified_path, tk_root=None, ui_
         for item in sync_ops:
             print(item)
             ui_print(f"Saving: {item.source_path}", tk_root, ui_text_obj)
+            # A directory delete can block the pad for seconds before it replies;
+            # signal liveness first so the Electron inactivity timer covers it.
+            if progress is not None:
+                progress(item.source_path)
             do_hid_fileop(item, myh, progress=progress)
     except Exception:
         # A failed write leaves the pad in File Access Mode; exit it so the next

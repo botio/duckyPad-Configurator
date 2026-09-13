@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import tempfile
+import time
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,9 +21,10 @@ from shared import (
 
 
 class SaveDevice:
-    def __init__(self, fault=None, unsolicited=False):
+    def __init__(self, fault=None, unsolicited=False, slow_delete_ms=None):
         self.fault = fault
         self.unsolicited = unsolicited
+        self.slow_delete_ms = slow_delete_ms
         self.commands = []
         self.files = {}
         self.current = None
@@ -68,6 +70,11 @@ class SaveDevice:
 
     def read(self, _size, timeout_ms=None):
         self.read_timeouts.append(timeout_ms)
+        if self.slow_delete_ms is not None and self.commands and self.commands[-1] == HID_COMMAND_DELETE_DIR:
+            sleep = self.slow_delete_ms
+            self.slow_delete_ms = None  # slow only the first delete
+            if sleep:
+                time.sleep(sleep / 1000.0)
         return self.replies.pop(0) if self.replies else []
 
 
@@ -108,6 +115,27 @@ def run_checks():
         # (see _sync_dp20); only the handle must be released here.
         assert transport.closed, 'successful SAVE leaks its HID handle'
         print('PASS SAVE writes exact multi-chunk content despite Herdr reports and releases its handle')
+
+        # A recursive profile delete blocks the pad over SPI for several seconds;
+        # it must not be mistaken for a lost acknowledgement at the fast bound.
+        original = Path(temporary) / 'original2'
+        modified = Path(temporary) / 'modified2'
+        original.mkdir()
+        modified.mkdir()
+        (original / 'profile_Old').mkdir()
+        (original / 'profile_Old' / 'config.txt').write_bytes(b'z1 Old\n')
+        (modified / 'profile_info.txt').write_bytes(b'1 Fresh\n')
+        transport = SaveDevice(slow_delete_ms=2000)
+        with patch.object(hid_op.hid, 'device', return_value=transport):
+            my_compare.duckypad_file_sync(str(original), str(modified), device)
+        assert HID_COMMAND_DELETE_DIR in transport.commands, 'removed profile did not generate DELETE_DIR'
+        delete_reads = [
+            timeout for command, timeout in zip(transport.commands, transport.read_timeouts)
+            if command == HID_COMMAND_DELETE_DIR
+        ]
+        assert all(timeout is not None and timeout >= 2000 for timeout in delete_reads), 'DELETE_DIR is bounded by the fast chunk ceiling'
+        assert transport.closed, 'slow-delete SAVE leaks its HID handle'
+        print('PASS SAVE waits out a slow directory delete instead of timing out at the chunk bound')
 
 
 if __name__ == '__main__':
