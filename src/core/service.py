@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 import sys
+import tempfile
 import time
 from typing import Any, Callable
 
@@ -29,7 +30,6 @@ from shared import (
     MAX_PROFILE_NAME_LEN,
     backup_path,
     delete_path,
-    ensure_dir,
     make_final_script,
     profile_info_dot_txt,
     stdlib_source_tag_NO_SPACE,
@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.24"
+APP_VERSION = "5.0.25"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -94,6 +94,7 @@ class CoreService:
         self.selected_profile: str | None = None
         self.update = {"app": 2, "app_latest": None, "firmware": 2, "firmware_latest": None}
         self._scanned_devices: dict[str, dict[str, Any]] = {}
+        self._hid_mirror: tempfile.TemporaryDirectory | None = None
 
     def dispatch(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
@@ -256,18 +257,36 @@ class CoreService:
             return self._connect_folder(Path(drive), "dp24", source="device")
         # The OG has no mounted profile volume. dump_sd produces a local HID mirror.
         import dp20_dumpsd
-        dump = Path(backup_path).parent / "hid_dump"
-        ensure_dir(str(dump.parent))
         try:
+            mirror = tempfile.TemporaryDirectory(prefix="duckypad-hid-")
+        except OSError as exc:
+            raise CoreError(
+                -32004,
+                "Could not create a local temporary profile mirror",
+                {"stage": "local_cache", "detail": str(exc)},
+            ) from exc
+        try:
+            dump = Path(mirror.name) / "profiles"
             dp20_dumpsd.dump_sd(info["hid_path"], str(dump), backup_path, None, None)
+            self.device.connection_type = self.device.hidmsg
+            state = self._connect_folder(dump, "dp20", source="device")
+            self._hid_mirror = mirror
+            return state
+        except dp20_dumpsd.LocalMirrorError as exc:
+            raise CoreError(
+                -32004,
+                "Could not write the local temporary profile mirror",
+                {"stage": "local_cache", "detail": str(exc)},
+            ) from exc
         except OSError as exc:
             raise CoreError(
                 -32001,
                 "Could not read the duckyPad 2020 profile storage",
                 {"stage": "read", "detail": str(exc)},
             ) from exc
-        self.device.connection_type = self.device.hidmsg
-        return self._connect_folder(dump, "dp20", source="device")
+        finally:
+            if self._hid_mirror is not mirror:
+                mirror.cleanup()
 
     def _mount_dp24(self, info: dict[str, Any]) -> str:
         existing = self._drive_for_device(info)
@@ -304,6 +323,11 @@ class CoreService:
             self._convert_dp20_to_canonical()
         self.user_header = self._read_header(self.root_path / user_header_dot_txt)
         self.selected_profile = self.profile_list[0].name if self.profile_list else None
+        if self._hid_mirror is not None and not self.root_path.is_relative_to(
+            Path(self._hid_mirror.name).resolve()
+        ):
+            self._hid_mirror.cleanup()
+            self._hid_mirror = None
         return self.session_state()
 
     def device_disconnect(self) -> dict[str, Any]:
@@ -312,6 +336,9 @@ class CoreService:
         self.profile_list = []
         self.selected_profile = None
         self.device = dp_type()
+        if self._hid_mirror is not None:
+            self._hid_mirror.cleanup()
+            self._hid_mirror = None
         return _result(ok=True)
 
     def device_reset(self, reboot_to_msc: bool = False) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -235,6 +236,102 @@ def main() -> None:
             check(scan["devices"][0]["id"] == "01020304", "scan identifies v3.1.8 device")
             service_module.hid_op.scan_duckypads = lambda: []
             service_module.backup_path = str(root / "connect-backup")
+
+            if os.name == "posix" and os.geteuid() != 0:
+                locked_dump = root / "hid_dump"
+                locked_dump.mkdir()
+                locked_toc = locked_dump / "profile_info.txt"
+                locked_toc.write_bytes(b"old cached profiles\n")
+                locked_toc.chmod(0o444)
+                locked_dump.chmod(0o555)
+                dp20_dumpsd.hid.device = _FakeDP20
+                try:
+                    connected = connect_service.device_connect("01020304")
+                    mirror = Path(connected["root_path"])
+                    check(
+                        connected["connected"]
+                        and connected["profiles"][0]["name"] == "Default"
+                        and all(
+                            (mirror / path.lstrip("/")).read_bytes() == content
+                            for path, content in _FakeDP20.files.items()
+                        ),
+                        "connect mirrors real packets despite an unwritable legacy cache",
+                    )
+                    check(
+                        locked_toc.read_bytes() == b"old cached profiles\n"
+                        and locked_dump.stat().st_mode & 0o777 == 0o555,
+                        "connect preserves legacy cache contents and permissions",
+                    )
+                    original_temporary_directory = tempfile.TemporaryDirectory
+                    attempted_mirrors = []
+
+                    def tracked_mirror(*args, **kwargs):
+                        directory = original_temporary_directory(*args, **kwargs)
+                        attempted_mirrors.append(Path(directory.name))
+                        return directory
+
+                    class _BlockedLocalWriteDP20(_FakeDP20):
+                        def read(self, size, timeout_ms=None):
+                            response = super().read(size, timeout_ms)
+                            if (
+                                self.commands[-1] == dp20_dumpsd.HID_COMMAND_READ_FILE
+                                and self.current_path == "/profile_info.txt"
+                                and response[2] == 0
+                            ):
+                                blocked = attempted_mirrors[-1] / "profiles"
+                                blocked.mkdir()
+                                blocked.chmod(0o555)
+                            return response
+
+                    blocked_device = _BlockedLocalWriteDP20()
+                    dp20_dumpsd.hid.device = lambda: blocked_device
+                    tempfile.TemporaryDirectory = tracked_mirror
+                    try:
+                        try:
+                            connect_service.device_connect("01020304")
+                        except CoreError as exc:
+                            check(
+                                exc.code == -32004 and exc.data["stage"] == "local_cache",
+                                "local disk failure is not reported as a device read failure",
+                            )
+                        else:
+                            raise AssertionError("connect accepted an unwritable mirror")
+                    finally:
+                        tempfile.TemporaryDirectory = original_temporary_directory
+                        dp20_dumpsd.hid.device = _FakeDP20
+                    check(
+                        len(blocked_device.paths) == 1
+                        and blocked_device.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS
+                        and not attempted_mirrors[-1].exists()
+                        and connect_service.session_state()["root_path"] == str(mirror)
+                        and (mirror / "profile_info.txt").read_bytes() == _FakeDP20.files["/profile_info.txt"],
+                        "local write failure exits HID without retry, removes partial data, and preserves the active session",
+                    )
+                    reconnected = connect_service.device_connect("01020304")
+                    check(
+                        not mirror.exists() and reconnected["connected"],
+                        "reconnecting replaces and releases the previous session mirror",
+                    )
+                    mirror = Path(reconnected["root_path"])
+                    second_service = CoreService()
+                    second_service.device_scan()
+                    second = second_service.device_connect("01020304")
+                    second_mirror = Path(second["root_path"])
+                    second_service.device_disconnect()
+                    check(
+                        not second_mirror.exists() and mirror.exists(),
+                        "disconnect removes only its own session mirror",
+                    )
+                    connect_service.device_connect_folder(str(root), "dp20")
+                    check(
+                        not mirror.exists() and (profile / "config.txt").exists(),
+                        "switching to a folder releases the mirror without deleting user files",
+                    )
+                finally:
+                    locked_dump.chmod(0o755)
+                    locked_toc.chmod(0o644)
+                    dp20_dumpsd.hid.device = original_device
+                connect_service.device_scan()
 
             def fake_dump(_path, dump_dir, _backup, *_ui):
                 dump_root = Path(dump_dir)

@@ -10,6 +10,10 @@ DP20_KEY_COUNT = 20
 DP20_RESPONSE_TIMEOUT_MS = 1500
 
 
+class LocalMirrorError(OSError):
+    """The local profile mirror could not be created or written."""
+
+
 def _read_response(hid_obj, operation):
     response = hid_obj.read(
         DUCKYPAD_TO_PC_HID_BUF_SIZE, DP20_RESPONSE_TIMEOUT_MS
@@ -29,9 +33,12 @@ def save_to_file(sd_path, pc_dump_dir_path, file_name, file_content):
     sd_path = sd_path.lstrip("\\/")
     full_dir_path = os.path.join(pc_dump_dir_path, sd_path)
     full_file_path = os.path.join(full_dir_path, file_name)
-    os.makedirs(full_dir_path, exist_ok=True)
-    with open(full_file_path, 'wb') as file:
-        file.write(file_content)
+    try:
+        os.makedirs(full_dir_path, exist_ok=True)
+        with open(full_file_path, 'wb') as file:
+            file.write(file_content)
+    except OSError as exc:
+        raise LocalMirrorError(exc.errno, exc.strerror, exc.filename) from exc
 
 
 def hid_dump_file(sd_file_path, hid_obj, missing_ok=False):
@@ -153,10 +160,17 @@ def dump_sd(dp_path, dump_dir_path, backup_dir_path, tk_root_obj=None, ui_text_o
     del backup_dir_path
     last_error = None
     for attempt in range(1, 4):
-        shutil.rmtree(dump_dir_path, ignore_errors=True)
+        try:
+            shutil.rmtree(dump_dir_path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise LocalMirrorError(exc.errno, exc.strerror, exc.filename) from exc
         try:
             _dump_sd_once(dp_path, dump_dir_path, tk_root_obj, ui_text_obj)
             return True
+        except LocalMirrorError:
+            raise
         except OSError as exc:
             last_error = exc
             print(f"DP20 direct file mirror attempt {attempt}/3 failed:", exc)
