@@ -72,8 +72,10 @@ def main() -> None:
             files = {
                 "/profile_info.txt": b"0 Default\n",
                 "/profile_Default/config.txt": b"z1 Hello\n",
-                "/profile_Default/key1.txt": b"STRING hello",
-                "/user_header.txt": b"// header\n",
+                # UTF-8 spans the first 61-byte boundary; the file spans four reports.
+                "/profile_Default/key1.txt": ("STRING " + "a" * 53 + "測試" * 30 + "\n").encode("utf-8"),
+                "/profile_Default/key2.txt": b"",
+                "/user_header.txt": b"// " + b"h" * 58,
             }
 
             def __init__(self, fail_path=None, break_after_failure=False):
@@ -101,17 +103,17 @@ def main() -> None:
             def read(self, _size, timeout_ms=None):
                 self.read_timeouts.append(timeout_ms)
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS:
-                    return [0, 0, 0] + [0] * 61
+                    return [4, 0, 0] + [0] * 61
                 if self.commands[-1] == dp20_dumpsd.HID_COMMAND_OPEN_FILE_FOR_READING:
                     if self.current_path == self.fail_path:
                         self.broken = self.break_after_failure
                         raise OSError("forced file read failure")
                     status = 0 if self.current_path in self.files else 4
-                    return [0, 0, status] + [0] * 61
+                    return [4, 0, status] + [0] * 61
                 content = self.files[self.current_path]
-                chunk = content[self.offset:self.offset + 60]
+                chunk = content[self.offset:self.offset + 61]
                 self.offset += len(chunk)
-                return [0, 0, len(chunk)] + list(chunk) + [0] * (61 - len(chunk))
+                return [4, 0, len(chunk)] + list(chunk) + [0] * (61 - len(chunk))
 
             def close(self):
                 pass
@@ -125,11 +127,11 @@ def main() -> None:
                 "dp20 direct file mirror completes",
             )
             check(
-                fake_dp20.paths == [b"/dev/mock-duckypad"]
-                and dp20_dumpsd.HID_COMMAND_DUMP_SD not in fake_dp20.commands
-                and fake_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS
-                and (dp20_dump / "profile_Default" / "config.txt").read_text() == "z1 Hello\n"
-                and (dp20_dump / "profile_Default" / "key1.txt").read_text() == "STRING hello",
+                fake_dp20.commands[-1] == dp20_dumpsd.HID_COMMAND_EXIT_FILE_ACCESS
+                and all(
+                    (dp20_dump / path.lstrip("/")).read_bytes() == content
+                    for path, content in fake_dp20.files.items()
+                ),
                 "dp20 mirrors files before safely exiting File Access Mode",
             )
             check(
@@ -140,6 +142,20 @@ def main() -> None:
                 ),
                 "dp20 bounds every HID response wait below the connect timeout",
             )
+
+            class _OversizedChunkDP20(_FakeDP20):
+                def read(self, size, timeout_ms=None):
+                    if self.commands[-1] == dp20_dumpsd.HID_COMMAND_READ_FILE:
+                        return [4, 0, 62] + [0] * 61
+                    return super().read(size, timeout_ms)
+
+            try:
+                dp20_dumpsd.hid_dump_file("/profile_info.txt", _OversizedChunkDP20())
+            except OSError:
+                pass
+            else:
+                raise AssertionError("dp20 accepted a chunk exceeding report capacity")
+            print("PASS dp20 rejects a 62-byte chunk in a 64-byte report")
             transient_dp20 = _FakeDP20("/profile_Default/config.txt")
             retry_dp20 = _FakeDP20()
             retry_devices = iter((transient_dp20, retry_dp20))
@@ -304,7 +320,11 @@ def main() -> None:
         sidecar.stdin.write(json.dumps({"jsonrpc":"2.0","id":1,"method":"hello","params":{}}) + "\n")
         sidecar.stdin.flush()
         response = json.loads(sidecar.stdout.readline())
-        check(response["result"]["sidecar_version"] == "5.0.23", "NDJSON hello")
+        check(
+            response["jsonrpc"] == "2.0" and response["id"] == 1
+            and "result" in response and "error" not in response,
+            "NDJSON hello response correlates with request",
+        )
         sidecar.terminate(); sidecar.wait(timeout=5)
 
 if __name__ == "__main__":

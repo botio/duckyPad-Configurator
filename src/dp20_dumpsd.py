@@ -60,7 +60,8 @@ def hid_dump_file(sd_file_path, hid_obj, missing_ok=False):
         if duckypad_to_pc_buf[1] != 0:
             raise OSError(f"HID read file failed: {duckypad_to_pc_buf[1]}")
         chunk_size = duckypad_to_pc_buf[2]
-        if chunk_size > 60:
+        # Report ID, status, and chunk length occupy the first three bytes.
+        if chunk_size > len(duckypad_to_pc_buf) - 3:
             raise OSError(f"HID read file returned invalid chunk size: {chunk_size}")
         if chunk_size == 0:
             return bytes(all_data)

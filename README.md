@@ -17,6 +17,11 @@ Open **Connect → Open Backup Folder** to edit a local duckyPad profile folder 
 The macOS package is ad-hoc signed, not notarized. On its first launch, Control-click the app in Finder, choose **Open**, then confirm **Open**. This is the supported Gatekeeper override for an unsigned app and is available without an Apple Developer membership.
 
 Full device instructions: [duckyPad documentation](https://dekunukem.github.io/duckyPad-Pro/doc/getting_started.html).
+
+### duckyPad 2020 profile reads
+
+Version 5.0.24 fixes `HID read file returned invalid chunk size: 61`. A 64-byte file-read report has a 3-byte header and up to 61 bytes of file data; earlier versions incorrectly rejected full-size chunks. This parser fix requires only a Configurator update, not an SD format or firmware flash.
+
 ### Feedbacks
 
 * [Open an issue](https://github.com/duckyPad/duckyPad-Configurator/issues)
