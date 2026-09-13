@@ -2,6 +2,7 @@ import ctypes
 import hid_proxy as hid
 import os
 import sys
+import time
 from datetime import datetime, timezone
 
 _HIDAPI_LIB = None
@@ -92,6 +93,16 @@ HID_RESPONSE_ERROR = 1
 HID_RESPONSE_BUSY = 2
 HID_RESPONSE_EOF = 3
 
+# Bounded wait for one device reply during a HID transfer. The pad ACKs every
+# SAVE chunk, so a lost acknowledgement must fail the save rather than block
+# the core indefinitely (and outlive the Electron request timeout).
+DP20_RESPONSE_TIMEOUT_MS = 1500
+
+# Unsolicited herdr key-state IN report discriminator (firmware hid_task.h
+# HERDR_IN_KEY_STATE). A concurrent Bridge poll can interleave these with a
+# SAVE acknowledgement; they must be discarded, not mistaken for an ACK.
+HERDR_IN_KEY_STATE_REPORT = 0xF1
+
 def make_dp_info_dict(hid_msg, hid_path):
     this_dict = {}
     this_dict['fw_version'] = f"{hid_msg[3]}.{hid_msg[4]}.{hid_msg[5]}"
@@ -161,6 +172,49 @@ def hid_txrx(buf_64b, hid_obj):
     duckypad_to_pc_buf = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE)
     # print("\nduckyPad response:\n", duckypad_to_pc_buf)
     return duckypad_to_pc_buf
+
+
+def read_tx_response(hid_obj, operation, timeout_ms=DP20_RESPONSE_TIMEOUT_MS):
+    """Write-agnostic bounded read of one device reply.
+
+    Waits up to ``timeout_ms`` in total, discarding unsolicited herdr key-state
+    reports, and returns a full-width response. Raises :class:`OSError` on
+    timeout or a short frame rather than blocking forever.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    while True:
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0:
+            raise OSError(f"{operation} timed out after {timeout_ms} ms")
+        remaining_ms = max(1, int(remaining_s * 1000))
+        duckypad_to_pc_buf = hid_obj.read(DUCKYPAD_TO_PC_HID_BUF_SIZE, remaining_ms)
+        if not duckypad_to_pc_buf:
+            raise OSError(f"{operation} timed out after {timeout_ms} ms")
+        if len(duckypad_to_pc_buf) != DUCKYPAD_TO_PC_HID_BUF_SIZE:
+            raise OSError(f"{operation} response is incomplete")
+        if duckypad_to_pc_buf[1] == HERDR_IN_KEY_STATE_REPORT:
+            continue
+        return duckypad_to_pc_buf
+
+
+def hid_txrx_bounded(buf_64b, hid_obj, operation, timeout_ms=DP20_RESPONSE_TIMEOUT_MS):
+    """Write one report then perform a bounded, herdr-aware response read."""
+    hid_obj.write(buf_64b)
+    return read_tx_response(hid_obj, operation, timeout_ms)
+
+
+def check_response(response, operation):
+    """Raise :class:`OSError` unless the device acknowledged success.
+
+    BUSY or an explicit error must stop the transfer; a non-acknowledging reply
+    must never be treated as a silent success.
+    """
+    status = response[2]
+    if status == HID_RESPONSE_OK:
+        return
+    if status == HID_RESPONSE_BUSY:
+        raise OSError(f"{operation}: duckyPad is busy")
+    raise OSError(f"{operation}: duckyPad returned status {status}")
 
 def get_timestamp_and_utc_offset():
     now = datetime.now().astimezone()  # Local time with timezone info

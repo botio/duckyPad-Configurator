@@ -94,12 +94,13 @@ def split_file_to_chunks(path, chunk_size=60):
     chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
     return chunks
 
-def hid_write_file(file_op, hid_obj):
+def hid_write_file(file_op, hid_obj, timeout_ms=DP20_RESPONSE_TIMEOUT_MS, progress=None):
     pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
     pc_to_duckypad_buf[2] = HID_COMMAND_OPEN_FILE_FOR_WRITING
     file_path = make_hid_file_path(file_op)
     write_str_into_buf(file_path, pc_to_duckypad_buf)
-    hid_txrx(pc_to_duckypad_buf, hid_obj)
+    response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, "OPEN_FILE_FOR_WRITING", timeout_ms)
+    check_response(response, f"OPEN_FILE_FOR_WRITING {file_path}")
 
     file_chunks = split_file_to_chunks(os.path.join(file_op.source_parent, file_op.source_path))
 
@@ -110,35 +111,82 @@ def hid_write_file(file_op, hid_obj):
         this_chunk_buf[2] = HID_COMMAND_WRITE_FILE
         write_bytes_into_buf(this_chunk, this_chunk_buf)
         # print(this_chunk_buf)
-        hid_txrx(this_chunk_buf, hid_obj)
+        response = hid_txrx_bounded(this_chunk_buf, hid_obj, f"WRITE_FILE {file_path}", timeout_ms)
+        check_response(response, f"WRITE_FILE {file_path}")
+        if progress is not None:
+            progress(file_op.source_path)
 
     pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
     pc_to_duckypad_buf[2] = HID_COMMAND_CLOSE_FILE
-    hid_txrx(pc_to_duckypad_buf, hid_obj)
+    response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, f"CLOSE_FILE {file_path}", timeout_ms)
+    check_response(response, f"CLOSE_FILE {file_path}")
 
-def do_hid_fileop(this_op, hid_obj):
+
+def do_hid_fileop(this_op, hid_obj, timeout_ms=DP20_RESPONSE_TIMEOUT_MS, progress=None):
     pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
 
     if this_op.action == this_op.delete_file:
         pc_to_duckypad_buf[2] = HID_COMMAND_DELETE_FILE
         file_path = make_hid_file_path(this_op)
         write_str_into_buf(file_path, pc_to_duckypad_buf)
-        hid_txrx(pc_to_duckypad_buf, hid_obj)
+        response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, "DELETE_FILE", timeout_ms)
+        check_response(response, f"DELETE_FILE {file_path}")
     elif this_op.action == this_op.copy_file:
-        hid_write_file(this_op, hid_obj)
+        hid_write_file(this_op, hid_obj, timeout_ms, progress)
     elif this_op.action == this_op.rmdir:
         pc_to_duckypad_buf[2] = HID_COMMAND_DELETE_DIR
         file_path = make_hid_file_path(this_op)
         write_str_into_buf(file_path, pc_to_duckypad_buf)
-        hid_txrx(pc_to_duckypad_buf, hid_obj)
+        response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, "DELETE_DIR", timeout_ms)
+        check_response(response, f"DELETE_DIR {file_path}")
     elif this_op.action == this_op.mkdir:
         pc_to_duckypad_buf[2] = HID_COMMAND_CREATE_DIR
         file_path = make_hid_file_path(this_op)
         write_str_into_buf(file_path, pc_to_duckypad_buf)
-        hid_txrx(pc_to_duckypad_buf, hid_obj)
+        response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, "CREATE_DIR", timeout_ms)
+        check_response(response, f"CREATE_DIR {file_path}")
     return pc_to_duckypad_buf
 
-def duckypad_file_sync_hid(hid_path, orig_path, modified_path, tk_root=None, ui_text_obj=None):
+
+def _exit_file_access_mode(hid_obj):
+    packet = [0] * PC_TO_DUCKYPAD_HID_BUF_SIZE
+    packet[0] = 5
+    packet[2] = HID_COMMAND_EXIT_FILE_ACCESS
+    try:
+        hid_obj.write(packet)
+        response = read_tx_response(hid_obj, "EXIT_FILE_ACCESS")
+        check_response(response, "EXIT_FILE_ACCESS")
+        return True
+    except OSError as exc:
+        print("SAVE could not exit File Access Mode:", exc)
+        return False
+
+
+def _exit_file_access_best_effort(hid_obj, hid_path):
+    """Restore the pad to normal mode after a failed transfer, reopening a fresh
+    handle if the in-flight one is unusable, without masking the original error."""
+    if hid_obj is not None:
+        try:
+            if _exit_file_access_mode(hid_obj):
+                return
+        except OSError:
+            pass
+    recovery = None
+    try:
+        recovery = hid.device()
+        recovery.open_path(hid_path)
+        _exit_file_access_mode(recovery)
+    except OSError as exc:
+        print("File Access Mode recovery failed:", exc)
+    finally:
+        if recovery is not None:
+            try:
+                recovery.close()
+            except OSError:
+                pass
+
+
+def duckypad_file_sync_hid(hid_path, orig_path, modified_path, tk_root=None, ui_text_obj=None, progress=None):
     sync_ops = my_compare.get_file_sync_ops(orig_path, modified_path)
     if len(sync_ops) == 0:
         return 0
@@ -146,12 +194,21 @@ def duckypad_file_sync_hid(hid_path, orig_path, modified_path, tk_root=None, ui_
     myh = hid.device()
     myh.open_path(hid_path)
 
-    for item in sync_ops:
-        print(item)
-        ui_print(f"Saving: {item.source_path}", tk_root, ui_text_obj)
-        do_hid_fileop(item, myh)
-
-    myh.close()
+    try:
+        for item in sync_ops:
+            print(item)
+            ui_print(f"Saving: {item.source_path}", tk_root, ui_text_obj)
+            do_hid_fileop(item, myh, progress=progress)
+    except Exception:
+        # A failed write leaves the pad in File Access Mode; exit it so the next
+        # operation (and the pad's own UI) is not stuck, then re-raise the cause.
+        _exit_file_access_best_effort(myh, hid_path)
+        raise
+    finally:
+        try:
+            myh.close()
+        except Exception:
+            pass
 
 # sd_path = "./dump"
 # modified_path = "./to_write_back"

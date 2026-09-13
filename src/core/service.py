@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.29"
+APP_VERSION = "5.0.30"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -659,7 +659,14 @@ class CoreService:
     def _sync_dp20(self, temporary_write: Path) -> None:
         assert self.root_path is not None
         try:
-            my_compare.duckypad_file_sync(str(self.root_path), str(temporary_write), self.device, None, None)
+            my_compare.duckypad_file_sync(
+                str(self.root_path),
+                str(temporary_write),
+                self.device,
+                None,
+                None,
+                progress=lambda path: self.emit("profiles/save", {"phase": "transfer", "path": path}),
+            )
             hid_op.duckypad_hid_sw_reset(self.device.info_dict)
         except Exception as exc:
             raise CoreError(-32001, "Saved backup but failed to sync duckyPad 2020", {"detail": str(exc)}) from exc

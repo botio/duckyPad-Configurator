@@ -60,6 +60,10 @@ function handleMessage(line) {
     else request.resolve(payload.result);
     return;
   }
+  if (payload.method === 'event/profiles/save' && payload.params?.phase === 'transfer') {
+    const request = pending.get(payload.params.request_id);
+    if (request?.method === 'profiles/save') request.timer.refresh();
+  }
   if (payload.method && payload.method.startsWith('event/')) rendererEvent(payload.method, payload.params || {});
 }
 
@@ -233,7 +237,7 @@ function request(method, params = {}, timeout = null) {
       pending.delete(id);
       reject({ code: -32006, message: `${method} timed out`, data: {} });
     }, ms);
-    pending.set(id, { resolve, reject, timer });
+    pending.set(id, { method, resolve, reject, timer });
     sidecar.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
   });
 }

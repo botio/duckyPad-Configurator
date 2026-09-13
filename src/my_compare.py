@@ -158,9 +158,9 @@ def execute_sync_ops_msc(op_list):
             dst = Path(os.path.join(item.destination_parent, item.destination_path))
             shutil.copy(src, dst)
 
-def duckypad_file_sync(orig_path, modified_path, THIS_DUCKYPAD, tk_root_obj=None, ui_text_obj=None):
+def duckypad_file_sync(orig_path, modified_path, THIS_DUCKYPAD, tk_root_obj=None, ui_text_obj=None, progress=None):
     if THIS_DUCKYPAD.connection_type == THIS_DUCKYPAD.hidmsg:
-        hid_op.duckypad_file_sync_hid(THIS_DUCKYPAD.info_dict['hid_path'], orig_path, modified_path, tk_root_obj, ui_text_obj)
+        hid_op.duckypad_file_sync_hid(THIS_DUCKYPAD.info_dict['hid_path'], orig_path, modified_path, tk_root_obj, ui_text_obj, progress)
     else:
         sync_ops = get_file_sync_ops(orig_path, modified_path)
         execute_sync_ops_msc(sync_ops)

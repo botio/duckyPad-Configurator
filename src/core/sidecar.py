@@ -17,14 +17,18 @@ with contextlib.redirect_stdout(sys.stderr):
     from core.service import CoreError, CoreService
 
 _running = True
+_protocol_stdout = sys.stdout
+_active_request: dict[str, Any] | None = None
 
 
 def _write(payload: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    _protocol_stdout.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n")
+    _protocol_stdout.flush()
 
 
 def _emit(method: str, params: dict[str, Any]) -> None:
+    if method == "event/profiles/save" and _active_request is not None:
+        params = {**params, "request_id": _active_request["id"]}
     _write({"jsonrpc": "2.0", "method": method, "params": params})
 
 
@@ -35,7 +39,7 @@ def _stop(_signum: int, _frame: Any) -> None:
 
 
 def main() -> int:
-    global _running
+    global _running, _active_request
     signal.signal(signal.SIGTERM, _stop)
     if hasattr(signal, "SIGINT"):
         signal.signal(signal.SIGINT, _stop)
@@ -48,8 +52,12 @@ def main() -> int:
             request = json.loads(raw)
             if request.get("jsonrpc") != "2.0" or "id" not in request or not isinstance(request.get("method"), str):
                 raise CoreError(-32600, "Invalid JSON-RPC request")
-            with contextlib.redirect_stdout(sys.stderr):
-                result = service.dispatch(request["method"], request.get("params") or {})
+            _active_request = request
+            try:
+                with contextlib.redirect_stdout(sys.stderr):
+                    result = service.dispatch(request["method"], request.get("params") or {})
+            finally:
+                _active_request = None
             _write({"jsonrpc": "2.0", "id": request["id"], "result": result})
         except CoreError as error:
             _write({"jsonrpc": "2.0", "id": request.get("id") if "request" in locals() else None, "error": {"code": error.code, "message": error.message, "data": error.data}})
