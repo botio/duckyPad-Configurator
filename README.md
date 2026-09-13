@@ -42,7 +42,7 @@ The Configurator configures the [duckyPad × Herdr Bridge](https://github.com/bo
 
 ### Using it
 
-1. Use **Configurator 5.0.27+** with **firmware 3.1.15+** on the original duckyPad. The **HERDR** sidebar is visible even when the Bridge is not installed.
+1. Use **Configurator 5.0.28+** with **firmware 3.1.15+** on the original duckyPad. The **HERDR** sidebar is visible even when the Bridge is not installed.
 2. Click **ADD HERDR PROFILE**, choose a name, then click the bottom **SAVE** button to write it to the pad.
 3. On the physical pad, use **+ / −** to select that profile. Starting the Bridge no longer takes over ordinary profiles. Switching away restores normal macro behavior.
 4. Change **Working, Blocked, Done, Idle, Unknown** in **STATUS COLORS**, then click **SAVE COLORS**. These colors are host-wide and reload automatically in the running Bridge; they are separate from the pad's profile SAVE operation.

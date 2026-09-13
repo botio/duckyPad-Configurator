@@ -143,10 +143,11 @@
     const supported = state.session?.connected && state.session.model === 'dp20';
     panel.classList.toggle('hidden', !supported);
     if (!supported) return;
+    const canInstall = Boolean(status?.env?.cargo?.found && status.env.herdr?.found && status.env.plugin_repo);
     $('herdr-status').textContent = status?.env
-      ? `DFU: ${status.dfu?.verified === true ? 'verified' : 'not available'}\nInstall: ${status.env.can_install_plugin ? 'ready' : 'unavailable'}`
+      ? `DFU: ${status.dfu?.verified === true ? 'verified' : 'not available'}\nInstall: ${canInstall ? 'ready' : 'unavailable'}`
       : 'Bridge diagnostics unavailable. You can still create a profile and save its colors.';
-    $('herdr-install').disabled = !status?.env?.can_install_plugin;
+    $('herdr-install').disabled = !canInstall;
     $('herdr-flash').disabled = status?.dfu?.verified !== true;
     $('herdr-palette').disabled = !state.palette || state.paletteSaving;
     $('herdr-save-colors').disabled = !state.palette || !state.paletteDirty || state.paletteSaving;
