@@ -19,7 +19,8 @@
     catch (error) {
       const message = error.message || 'Core request failed';
       const line = error.data?.line >= 0 ? `line ${error.data.line}` : '';
-      toast([message, line, error.data?.detail].filter(Boolean).join(' · '));
+      const where = error.data?.profile ? `'${error.data.profile}' key ${error.data.key}${error.data.release ? ' (on release)' : ''}` : '';
+      toast([where, message, line, error.data?.detail].filter(Boolean).join(' · '));
       throw error;
     }
   }

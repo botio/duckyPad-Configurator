@@ -627,9 +627,20 @@ class CoreService:
             for slot, key in enumerate(profile.keylist):
                 if key is None:
                     continue
-                output[(profile.name, slot, False)] = self._compile(key, key.script or "")
+                device_index = self._device_key_index(slot)
+                if device_index is None:
+                    continue
+                try:
+                    output[(profile.name, slot, False)] = self._compile(key, key.script or "")
+                except CoreError as error:
+                    error.data.update(profile=profile.name, key=device_index)
+                    raise
                 if key.script_on_release:
-                    output[(profile.name, slot, True)] = self._compile(key, key.script_on_release)
+                    try:
+                        output[(profile.name, slot, True)] = self._compile(key, key.script_on_release)
+                    except CoreError as error:
+                        error.data.update(profile=profile.name, key=device_index, release=True)
+                        raise
         return output
 
     def _compile(self, key: duck_objs.dp_key, script: str) -> bytes:

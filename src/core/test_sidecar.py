@@ -94,6 +94,21 @@ def check_herdr(temporary: str) -> None:
             herdr_config.save(migrated)
             check(herdr_config.load().colors["done"] == [50, 60, 70] and herdr_config.load().pinned_slots == {2: "keep"}, "canonical macOS palette wins over legacy values")
 
+    bad_root = Path(temporary) / "bad-script"
+    bad_profile = bad_root / "profile_Ops"
+    bad_profile.mkdir(parents=True)
+    (bad_profile / "config.txt").write_text("z3 BROKEN\n", encoding="utf-8")
+    (bad_profile / "key3.txt").write_text("PRINT hello\n", encoding="utf-8")
+    (bad_root / "profile_info.txt").write_text("0 Ops\n", encoding="utf-8")
+    bad_service = CoreService()
+    bad_service.device_connect_folder(str(bad_root), "dp20")
+    try:
+        bad_service.profiles_save(to="device")
+    except CoreError as error:
+        check(error.code == -32003 and error.data.get("profile") == "Ops" and error.data.get("key") == 3, "broken script reports its profile and physical key")
+    else:
+        raise AssertionError("broken duckyScript unexpectedly compiled during save")
+
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as temporary:
