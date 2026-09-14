@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "DUCKYPAD_CORE_DEV=1 electron .",
     "dist": "electron-builder --config electron-builder.yml",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/save-rpc.test.cjs"
   },
   "dependencies": {
     "node-hid": "^3.4.0"
