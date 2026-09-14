@@ -3,11 +3,11 @@ from __future__ import annotations
 import os
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 from unittest.mock import patch
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import core.service as service_module
@@ -182,10 +182,25 @@ def main() -> None:
         backup = service.profiles_save(to="backup")
         check(Path(backup["path"]).is_dir(), "backup written")
         # Folder SAVE stages on local disk then publishes, like upstream 4.0.2.
+        toc_before = (root / "profile_info.txt").read_text(encoding="utf-8")
         with patch.object(service_module, "backup_path", temporary):
             saved = service.profiles_save(to="device")
         check((root / "profile_info.txt").is_file() and (root / "profile_Alpha" / "config.txt").is_file(), "folder save publishes profiles")
         check(Path(saved["path"]) == root.resolve(), "folder save reports the live folder path")
+        check((root / "profile_info.txt").read_text(encoding="utf-8").startswith("1 "), "folder save keeps a readable TOC")
+        # If publish fails while copying trees, the previous TOC must remain.
+        real_copytree = shutil.copytree
+        def boom(src, dst, **kwargs):
+            raise OSError("simulated FAT write failure")
+        with patch.object(service_module, "backup_path", temporary), patch.object(shutil, "copytree", boom):
+            try:
+                service.profiles_save(to="device")
+            except CoreError as error:
+                check(error.code == -32004, "folder save surfaces publish copy failures")
+                check((root / "profile_info.txt").is_file(), "failed publish must not delete profile_info.txt")
+                check((root / "profile_info.txt").read_text(encoding="utf-8") == toc_before or (root / "profile_Alpha").is_dir(), "failed publish leaves previous profiles or TOC intact")
+            else:
+                raise AssertionError("folder save ignored a copy failure")
         vanished = Path(temporary) / "missing-volume"
         service.root_path = vanished
         with patch.object(service_module, "backup_path", temporary):

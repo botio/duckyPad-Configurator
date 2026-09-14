@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.35"
+APP_VERSION = "5.0.36"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -582,24 +582,61 @@ class CoreService:
         return prefix + datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
     def _publish_folder(self, destination: Path, source: Path) -> None:
-        """Replace profile files on destination with a completed local tree."""
+        """Replace profile files without leaving the volume without a TOC.
+
+        Removable FAT volumes must not lose profile_info.txt if copy fails
+        mid-way. New trees are written beside the old ones, then swapped.
+        """
         if not destination.is_dir():
             raise FileNotFoundError(f"Save target is not available: {destination}")
         try:
-            entries = list(destination.iterdir())
+            list(destination.iterdir())
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"Save target disappeared: {destination}") from exc
-        for entry in entries:
-            if entry.is_dir() and entry.name.startswith("profile_"):
-                shutil.rmtree(entry)
-            elif entry.name in {profile_info_dot_txt, user_header_dot_txt}:
-                entry.unlink(missing_ok=True)
+
+        new_profiles: list[tuple[str, Path]] = []
         for item in source.iterdir():
-            target = destination / item.name
-            if item.is_dir():
-                shutil.copytree(item, target)
-            else:
-                shutil.copy2(item, target)
+            if not (item.is_dir() and item.name.startswith("profile_")):
+                continue
+            staging_dir = destination / f".{item.name}.new"
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+            shutil.copytree(item, staging_dir)
+            new_profiles.append((item.name, staging_dir))
+
+        def _install_file(name: str) -> None:
+            src_file = source / name
+            if not src_file.is_file():
+                return
+            tmp = destination / f".{name}.new"
+            shutil.copy2(src_file, tmp)
+            os.replace(tmp, destination / name)
+
+        # Install TOC only after profile trees are fully copied beside the old ones.
+        _install_file(profile_info_dot_txt)
+        _install_file(user_header_dot_txt)
+
+        keep = {name for name, _ in new_profiles}
+        for name, staging_dir in new_profiles:
+            final_dir = destination / name
+            old_dir = destination / f".{name}.old"
+            if old_dir.exists():
+                shutil.rmtree(old_dir, ignore_errors=True)
+            if final_dir.exists():
+                final_dir.rename(old_dir)
+            staging_dir.rename(final_dir)
+            if old_dir.exists():
+                shutil.rmtree(old_dir, ignore_errors=True)
+
+        for entry in list(destination.iterdir()):
+            if not entry.is_dir():
+                continue
+            if entry.name.startswith("profile_") and entry.name not in keep:
+                shutil.rmtree(entry, ignore_errors=True)
+            if entry.name.startswith(".profile_") and (
+                entry.name.endswith(".new") or entry.name.endswith(".old")
+            ):
+                shutil.rmtree(entry, ignore_errors=True)
 
     def _write_all(self, destination: Path) -> None:
         compiled = self._compile_profiles()
