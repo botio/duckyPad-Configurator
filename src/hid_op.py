@@ -73,7 +73,10 @@ def eject_drive(vol_str):
 
 def make_hid_file_path(file_op):
     result = os.path.join(file_op.local_dir, file_op.source_path)
-    result = result.lstrip('\\/')
+    # The HID file protocol addresses FatFs paths with forward slashes; the
+    # platform join emits backslashes on Windows, which FatFs would treat as
+    # part of a filename rather than a separator.
+    result = result.replace('\\', '/').lstrip('/')
     result = '/' + result
     if len(result) > HID_READ_FILE_PATH_SIZE_MAX:
         raise OSError(f"HID file path too long: {result}")
