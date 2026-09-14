@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.34"
+APP_VERSION = "5.0.35"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -538,27 +538,39 @@ class CoreService:
         if name is not None:
             self._get_profile(name)
         is_hid_device_save = to == "device" and self.source == "device" and self.device.connection_type == self.device.hidmsg
+        is_live_folder_save = to == "device" and not is_hid_device_save
         destination = self.root_path if to == "device" else Path(backup_path) / self._backup_name()
         staging = None
         backup_complete = False
         try:
-            if is_hid_device_save:
+            if is_hid_device_save or is_live_folder_save:
+                # Always build the full tree on local disk first. Removable FAT
+                # volumes (e.g. /Volumes/DUCK) can disappear mid-rmtree/mkdir;
+                # upstream 4.0.2 does the same backup-then-publish sequence.
                 Path(backup_path).mkdir(parents=True, exist_ok=True)
                 staging = Path(tempfile.mkdtemp(prefix=self._backup_name() + "-", dir=backup_path))
                 self._write_all(staging)
                 backup_complete = True
-                self._sync_dp20(staging)
-                self._write_all(self.root_path)
+                if is_hid_device_save:
+                    self._sync_dp20(staging)
+                self._publish_folder(destination, staging)
             else:
+                destination.mkdir(parents=True, exist_ok=True)
                 self._write_all(destination)
         except CoreError:
             raise
         except Exception as exc:
             detail = str(exc)
             data = {"detail": detail}
-            if backup_complete:
+            if backup_complete and staging is not None:
                 data["backup_path"] = str(staging)
                 data["detail"] = f"{detail}\nRecovery backup saved to {staging}"
+            if isinstance(exc, FileNotFoundError):
+                raise CoreError(
+                    -32004,
+                    "Save target disappeared (SD card ejected or path invalid)",
+                    data,
+                ) from exc
             raise CoreError(-32004, "Failed to save profiles", data) from exc
         finally:
             if staging is not None and not backup_complete:
@@ -569,21 +581,41 @@ class CoreService:
         prefix = "duckyPad_Pro_backup_" if self.model == "dp24" else "duckyPad_backup_"
         return prefix + datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
+    def _publish_folder(self, destination: Path, source: Path) -> None:
+        """Replace profile files on destination with a completed local tree."""
+        if not destination.is_dir():
+            raise FileNotFoundError(f"Save target is not available: {destination}")
+        try:
+            entries = list(destination.iterdir())
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"Save target disappeared: {destination}") from exc
+        for entry in entries:
+            if entry.is_dir() and entry.name.startswith("profile_"):
+                shutil.rmtree(entry)
+            elif entry.name in {profile_info_dot_txt, user_header_dot_txt}:
+                entry.unlink(missing_ok=True)
+        for item in source.iterdir():
+            target = destination / item.name
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
+
     def _write_all(self, destination: Path) -> None:
         compiled = self._compile_profiles()
+        destination.mkdir(parents=True, exist_ok=True)
         if destination.exists():
-            for entry in destination.iterdir():
+            for entry in list(destination.iterdir()):
                 if entry.is_dir() and entry.name.startswith("profile_"):
                     shutil.rmtree(entry)
                 elif entry.name in {profile_info_dot_txt, user_header_dot_txt}:
-                    entry.unlink()
-        destination.mkdir(parents=True, exist_ok=True)
+                    entry.unlink(missing_ok=True)
         (destination / profile_info_dot_txt).write_text("".join(f"{index + 1} {profile.name}\n" for index, profile in enumerate(self.profile_list)), encoding="utf-8")
         if self.user_header:
             (destination / user_header_dot_txt).write_text("".join(f"{line}\n" for line in self.user_header), encoding="utf-8")
         for profile in self.profile_list:
             profile_dir = destination / f"profile_{profile.name}"
-            profile_dir.mkdir()
+            profile_dir.mkdir(parents=True, exist_ok=True)
             config: list[str] = []
             for slot, key in enumerate(profile.keylist):
                 if key is None:

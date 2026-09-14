@@ -181,6 +181,22 @@ def main() -> None:
         check(len(service.session_state()["profiles"]) == 2, "profile CRUD")
         backup = service.profiles_save(to="backup")
         check(Path(backup["path"]).is_dir(), "backup written")
+        # Folder SAVE stages on local disk then publishes, like upstream 4.0.2.
+        with patch.object(service_module, "backup_path", temporary):
+            saved = service.profiles_save(to="device")
+        check((root / "profile_info.txt").is_file() and (root / "profile_Alpha" / "config.txt").is_file(), "folder save publishes profiles")
+        check(Path(saved["path"]) == root.resolve(), "folder save reports the live folder path")
+        vanished = Path(temporary) / "missing-volume"
+        service.root_path = vanished
+        with patch.object(service_module, "backup_path", temporary):
+            try:
+                service.profiles_save(to="device")
+            except CoreError as error:
+                check(error.code == -32004 and "disappeared" in error.message.lower(), "folder save names a missing removable volume")
+                check("backup_path" in error.data and Path(error.data["backup_path"]).is_dir(), "folder save keeps a local recovery tree when publish fails")
+            else:
+                raise AssertionError("folder save ignored a missing target volume")
+        service.root_path = root.resolve()
         export = service.profiles_export(["Alpha"], temporary)
         check(Path(export["path"]).is_file(), "zip exported")
         service.headers_set(["// updated"])
