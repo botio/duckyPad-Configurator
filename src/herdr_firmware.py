@@ -15,8 +15,8 @@ from pathlib import Path
 
 
 # Verified profile-gated image from the companion duckyPad firmware repository.
-HERDR_DFU_NAME = "duckypad_v3.1.18-herdr.dfu"
-HERDR_DFU_SHA256 = "9ca3ff95fd4198a2bbc38f4d2cd8d401b6ec0ff5462eb96919bf2b0175da374c"
+HERDR_DFU_NAME = "duckypad_v3.1.19-herdr.dfu"
+HERDR_DFU_SHA256 = "e67beece2822908705cb7cd7e11cb2b5723ffa711afbb83156ed34cc8705a488"
 # Stock rollback image (duckyPad repo).
 STOCK_DFU_NAME = "duckypad_v3.0.4.dfu"
 STOCK_DFU_SHA256 = "f6d8220f88df15da374c2bb1d45bae711fd0f080678b44f9177e3173ded9fa3d"

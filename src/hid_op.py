@@ -98,31 +98,51 @@ def split_file_to_chunks(path, chunk_size=60):
     return chunks
 
 def hid_write_file(file_op, hid_obj, timeout_ms=DP20_SLOW_TIMEOUT_MS, progress=None):
-    pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
-    pc_to_duckypad_buf[2] = HID_COMMAND_OPEN_FILE_FOR_WRITING
     file_path = make_hid_file_path(file_op)
-    write_str_into_buf(file_path, pc_to_duckypad_buf)
-    response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, "OPEN_FILE_FOR_WRITING", timeout_ms)
-    check_response(response, f"OPEN_FILE_FOR_WRITING {file_path}")
+    opened = False
+    try:
+        pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
+        pc_to_duckypad_buf[2] = HID_COMMAND_OPEN_FILE_FOR_WRITING
+        write_str_into_buf(file_path, pc_to_duckypad_buf)
+        response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, "OPEN_FILE_FOR_WRITING", timeout_ms)
+        check_response(response, f"OPEN_FILE_FOR_WRITING {file_path}")
+        opened = True
 
-    file_chunks = split_file_to_chunks(os.path.join(file_op.source_parent, file_op.source_path))
+        file_chunks = split_file_to_chunks(os.path.join(file_op.source_parent, file_op.source_path))
 
-    for this_chunk in file_chunks:
-        # print(len(this_chunk), this_chunk)
-        this_chunk_buf = get_empty_pc_to_duckypad_buf()
-        this_chunk_buf[1] = len(this_chunk)
-        this_chunk_buf[2] = HID_COMMAND_WRITE_FILE
-        write_bytes_into_buf(this_chunk, this_chunk_buf)
-        # print(this_chunk_buf)
-        response = hid_txrx_bounded(this_chunk_buf, hid_obj, f"WRITE_FILE {file_path}", DP20_RESPONSE_TIMEOUT_MS)
-        check_response(response, f"WRITE_FILE {file_path}")
-        if progress is not None:
-            progress(file_op.source_path)
+        for this_chunk in file_chunks:
+            this_chunk_buf = get_empty_pc_to_duckypad_buf()
+            this_chunk_buf[1] = len(this_chunk)
+            this_chunk_buf[2] = HID_COMMAND_WRITE_FILE
+            write_bytes_into_buf(this_chunk, this_chunk_buf)
+            response = hid_txrx_bounded(this_chunk_buf, hid_obj, f"WRITE_FILE {file_path}", DP20_RESPONSE_TIMEOUT_MS)
+            check_response(response, f"WRITE_FILE {file_path}")
+            if progress is not None:
+                progress(file_op.source_path)
 
-    pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
-    pc_to_duckypad_buf[2] = HID_COMMAND_CLOSE_FILE
-    response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, f"CLOSE_FILE {file_path}", timeout_ms)
-    check_response(response, f"CLOSE_FILE {file_path}")
+        pc_to_duckypad_buf = get_empty_pc_to_duckypad_buf()
+        pc_to_duckypad_buf[2] = HID_COMMAND_CLOSE_FILE
+        response = hid_txrx_bounded(pc_to_duckypad_buf, hid_obj, f"CLOSE_FILE {file_path}", timeout_ms)
+        check_response(response, f"CLOSE_FILE {file_path}")
+        opened = False
+    except Exception:
+        # FA_CREATE_ALWAYS already truncated the target; remove the partial so
+        # the pad does not arm a zero-byte .dsb and crash the VM on press.
+        if opened:
+            try:
+                close_buf = get_empty_pc_to_duckypad_buf()
+                close_buf[2] = HID_COMMAND_CLOSE_FILE
+                hid_txrx_bounded(close_buf, hid_obj, f"CLOSE_FILE {file_path}", timeout_ms)
+            except OSError:
+                pass
+            try:
+                delete_buf = get_empty_pc_to_duckypad_buf()
+                delete_buf[2] = HID_COMMAND_DELETE_FILE
+                write_str_into_buf(file_path, delete_buf)
+                hid_txrx_bounded(delete_buf, hid_obj, f"DELETE_FILE {file_path}", timeout_ms)
+            except OSError:
+                pass
+        raise
 
 
 def do_hid_fileop(this_op, hid_obj, timeout_ms=DP20_SLOW_TIMEOUT_MS, progress=None):

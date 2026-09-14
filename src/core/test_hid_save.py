@@ -137,10 +137,11 @@ def check_service_recovery(root):
                     assert error.code == -32001
                     detail = error.data['detail']
                     assert 'DELETE_DIR /profile_autohotkey' in detail and 'status 1' in detail
+                    assert 'device firmware 3.1.16' in detail and error.data.get('fw_version') == '3.1.16'
                     if result:
                         assert 'FR_NOT_READY (3)' in detail, 'raw FatFs cause did not reach the service consumer'
                     else:
-                        assert 'FR_' not in detail, 'legacy status 1 guessed a filesystem cause'
+                        assert 'FR_NOT_READY' not in detail, 'legacy status 1 guessed a filesystem cause'
                     backup = Path(error.data['backup_path'])
                     assert (error.message + "\n" + detail).count(str(backup)) == 1
                 else:

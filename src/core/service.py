@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.33"
+APP_VERSION = "5.0.34"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -679,10 +679,16 @@ class CoreService:
             hid_op.duckypad_hid_sw_reset(self.device.info_dict)
         except Exception as exc:
             backup = str(temporary_write)
+            fw = None
+            if self.device.info_dict:
+                fw = self.device.info_dict.get("fw_version")
+            detail = str(exc)
+            if fw:
+                detail = f"{detail} (device firmware {fw})"
             raise CoreError(
                 -32001,
                 f"Failed to sync duckyPad 2020. Recovery backup saved to {backup}",
-                {"detail": str(exc), "backup_path": backup},
+                {"detail": detail, "backup_path": backup, "fw_version": fw},
             ) from exc
 
     def profiles_export(self, names: list[str], dir: str) -> dict[str, Any]:
