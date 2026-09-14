@@ -149,6 +149,8 @@ def check_herdr(temporary: str) -> None:
 
 
 def main() -> None:
+    from core.test_hid_save import run_checks as check_hid_save
+    check_hid_save()
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary) / "duckypad"
         profile = root / "profile_Alpha"

@@ -231,7 +231,9 @@ function handleSidecarExit(reason) {
 function request(method, params = {}, timeout = null) {
   if (!sidecar || !sidecar.stdin.writable) return Promise.reject({ code: -32006, message: 'Python core is not running', data: {} });
   const id = nextRequestId++;
-  const ms = timeout || ((method === 'device/connect' || method === 'herdr/flash') ? 60000 : 30000);
+  // SAVE must outlast a 30-second SD metadata operation and bounded exit cleanup.
+  const ms = timeout || (method === 'profiles/save' ? 45000
+    : (method === 'device/connect' || method === 'herdr/flash') ? 60000 : 30000);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);

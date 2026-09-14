@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.31"
+APP_VERSION = "5.0.32"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -539,10 +539,14 @@ class CoreService:
             self._get_profile(name)
         is_hid_device_save = to == "device" and self.source == "device" and self.device.connection_type == self.device.hidmsg
         destination = self.root_path if to == "device" else Path(backup_path) / self._backup_name()
-        staging = Path(temp_dir_path) / f"hid-write-{int(time.time() * 1000)}"
+        staging = None
+        backup_complete = False
         try:
             if is_hid_device_save:
+                Path(backup_path).mkdir(parents=True, exist_ok=True)
+                staging = Path(tempfile.mkdtemp(prefix=self._backup_name() + "-", dir=backup_path))
                 self._write_all(staging)
+                backup_complete = True
                 self._sync_dp20(staging)
                 self._write_all(self.root_path)
             else:
@@ -550,9 +554,14 @@ class CoreService:
         except CoreError:
             raise
         except Exception as exc:
-            raise CoreError(-32004, "Failed to save profiles", {"detail": str(exc)}) from exc
+            detail = str(exc)
+            data = {"detail": detail}
+            if backup_complete:
+                data["backup_path"] = str(staging)
+                data["detail"] = f"{detail}\nRecovery backup saved to {staging}"
+            raise CoreError(-32004, "Failed to save profiles", data) from exc
         finally:
-            if is_hid_device_save:
+            if staging is not None and not backup_complete:
                 shutil.rmtree(staging, ignore_errors=True)
         return _result(ok=True, saved=[item.name for item in self.profile_list] if name is None else [name], path=str(destination))
 
@@ -665,11 +674,16 @@ class CoreService:
                 self.device,
                 None,
                 None,
-                progress=lambda path: self.emit("profiles/save", {"phase": "transfer", "path": path}),
+                progress=lambda path: self.emit("event/profiles/save", {"phase": "transfer", "path": path}),
             )
             hid_op.duckypad_hid_sw_reset(self.device.info_dict)
         except Exception as exc:
-            raise CoreError(-32001, "Saved backup but failed to sync duckyPad 2020", {"detail": str(exc)}) from exc
+            backup = str(temporary_write)
+            raise CoreError(
+                -32001,
+                f"Failed to sync duckyPad 2020. Recovery backup saved to {backup}",
+                {"detail": str(exc), "backup_path": backup},
+            ) from exc
 
     def profiles_export(self, names: list[str], dir: str) -> dict[str, Any]:
         self._require_session()

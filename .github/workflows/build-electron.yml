@@ -23,6 +23,9 @@ jobs:
         run: pip install -r src/requirements.txt
       - name: Test Python sidecar
         run: python src/core/test_sidecar.py
+      - name: Test SAVE request lifecycle
+        working-directory: app
+        run: npm test
       - name: Build Python sidecar
         run: python src/_build_sidecar.py
       - name: Install Electron dependencies
@@ -48,6 +51,9 @@ jobs:
         run: pip install -r src/requirements.txt
       - name: Test Python sidecar
         run: python src/core/test_sidecar.py
+      - name: Test SAVE request lifecycle
+        working-directory: app
+        run: npm test
       - name: Build Python sidecar
         run: python src/_build_sidecar.py
       - name: Create macOS icon
@@ -83,6 +89,9 @@ jobs:
         run: pip install -r src/requirements.txt
       - name: Test Python sidecar
         run: python src/core/test_sidecar.py
+      - name: Test SAVE request lifecycle
+        working-directory: app
+        run: npm test
       - name: Build Python sidecar
         run: python src/_build_sidecar.py
       - name: Install Electron dependencies

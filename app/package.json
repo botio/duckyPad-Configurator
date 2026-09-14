@@ -1,14 +1,15 @@
 {
   "name": "duckypad-configurator",
   "productName": "duckyPad Configurator",
-  "version": "5.0.31",
+  "version": "5.0.32",
   "description": "duckyPad Configurator Electron UI with Python hardware core",
   "main": "main/main.js",
   "author": "dekuNukem",
   "license": "GPL-3.0-or-later",
   "scripts": {
     "dev": "DUCKYPAD_CORE_DEV=1 electron .",
-    "dist": "electron-builder --config electron-builder.yml"
+    "dist": "electron-builder --config electron-builder.yml",
+    "test": "node --test test/*.test.cjs"
   },
   "dependencies": {
     "node-hid": "^3.4.0"

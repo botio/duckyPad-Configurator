@@ -208,17 +208,33 @@ def hid_txrx_bounded(buf_64b, hid_obj, operation, timeout_ms=DP20_RESPONSE_TIMEO
     return read_tx_response(hid_obj, operation, timeout_ms)
 
 
+FATFS_RESULTS = (
+    "FR_OK", "FR_DISK_ERR", "FR_INT_ERR", "FR_NOT_READY", "FR_NO_FILE",
+    "FR_NO_PATH", "FR_INVALID_NAME", "FR_DENIED", "FR_EXIST",
+    "FR_INVALID_OBJECT", "FR_WRITE_PROTECTED", "FR_INVALID_DRIVE",
+    "FR_NOT_ENABLED", "FR_NO_FILESYSTEM", "FR_MKFS_ABORTED", "FR_TIMEOUT",
+    "FR_LOCKED", "FR_NOT_ENOUGH_CORE", "FR_TOO_MANY_OPEN_FILES",
+    "FR_INVALID_PARAMETER",
+)
+
+
 def check_response(response, operation):
     """Raise :class:`OSError` unless the device acknowledged success.
 
     BUSY or an explicit error must stop the transfer; a non-acknowledging reply
     must never be treated as a silent success.
     """
+    if len(response) != DUCKYPAD_TO_PC_HID_BUF_SIZE or response[0] != 4 or response[1] != 0:
+        raise OSError(f"{operation}: invalid SAVE acknowledgement")
     status = response[2]
     if status == HID_RESPONSE_OK:
         return
     if status == HID_RESPONSE_BUSY:
         raise OSError(f"{operation}: duckyPad is busy")
+    if status == HID_RESPONSE_ERROR and response[3]:
+        result = response[3]
+        name = FATFS_RESULTS[result] if result < len(FATFS_RESULTS) else "unknown FRESULT"
+        raise OSError(f"{operation}: duckyPad returned status {status}: FatFs {name} ({result})")
     raise OSError(f"{operation}: duckyPad returned status {status}")
 
 def get_timestamp_and_utc_offset():
