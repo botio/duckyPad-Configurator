@@ -305,6 +305,31 @@ def main() -> None:
                 ),
                 "dp20 bounds every HID response wait below the connect timeout",
             )
+            blank_dp20 = _FakeDP20()
+            blank_dp20.files = {}
+            dp20_dumpsd.hid.device = lambda: blank_dp20
+            blank_dump = root / "dp20-blank"
+            check(
+                dp20_dumpsd.dump_sd(b"/dev/mock-duckypad", str(blank_dump), str(root / "backup")),
+                "blank SD dump succeeds",
+            )
+            check(
+                blank_dump.is_dir() and not (blank_dump / "profile_info.txt").exists(),
+                "blank SD leaves an empty profile folder",
+            )
+            blank_service = CoreService()
+            blank_state = blank_service.device_connect_folder(str(blank_dump), "dp20")
+            check(
+                blank_state["connected"] and blank_state["profiles"] == [],
+                "blank SD opens the app with no profiles",
+            )
+            created = blank_service.profiles_create("First")
+            check(
+                created["profiles"][0]["name"] == "First",
+                "blank SD can create the first profile",
+            )
+            dp20_dumpsd.hid.device = lambda: fake_dp20
+
 
             class _OversizedChunkDP20(_FakeDP20):
                 def read(self, size, timeout_ms=None):

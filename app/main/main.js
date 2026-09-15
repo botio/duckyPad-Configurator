@@ -285,6 +285,48 @@ async function boot() {
   windowRef.show();
 }
 
+function darwinInputMonitoring() {
+  if (process.platform !== 'darwin') return { ok: true, state: 'skipped' };
+  try {
+    const koffi = require('koffi');
+    const iokit = koffi.load('/System/Library/Frameworks/IOKit.framework/IOKit');
+    const IOHIDCheckAccess = iokit.func('int IOHIDCheckAccess(int)');
+    const IOHIDRequestAccess = iokit.func('bool IOHIDRequestAccess(int)');
+    const listenEvent = 1;
+    const granted = 0;
+    let access = IOHIDCheckAccess(listenEvent);
+    if (access !== granted) {
+      IOHIDRequestAccess(listenEvent);
+      access = IOHIDCheckAccess(listenEvent);
+    }
+    if (access === granted) return { ok: true, state: 'granted' };
+    if (access === 1) return { ok: false, state: 'denied' };
+    return { ok: false, state: 'unknown' };
+  } catch (err) {
+    return { ok: false, state: 'unknown', detail: String(err && err.message || err) };
+  }
+}
+
+function hostPermissions() {
+  if (process.platform !== 'darwin') {
+    return { platform: process.platform, ready: true, items: [] };
+  }
+  const listen = darwinInputMonitoring();
+  return {
+    platform: 'darwin',
+    ready: listen.ok === true,
+    items: [{
+      id: 'input-monitoring',
+      label: 'Input Monitoring',
+      detail: listen.ok
+        ? 'duckyPad Configurator can open the pad as a keyboard-class HID device.'
+        : 'System Settings → Privacy & Security → Input Monitoring → add “duckyPad Configurator”, enable it, then fully quit (⌘Q) and relaunch. Ad-hoc builds need this after every new signature.',
+      ok: listen.ok === true,
+      state: listen.state,
+    }],
+  };
+}
+
 function coreErrorPayload(error) {
   const value = error && typeof error === 'object' ? error : {};
   return {
@@ -318,6 +360,23 @@ ipcMain.handle('core:openExternal', (_event, target) => {
   const url = new URL(target);
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Only http(s) links are allowed');
   return shell.openExternal(url.toString());
+});
+ipcMain.handle('core:permissions', () => hostPermissions());
+ipcMain.handle('core:openInputMonitoring', async () => {
+  const urls = [
+    'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent',
+    'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
+  ];
+  let lastError;
+  for (const url of urls) {
+    try {
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Could not open Input Monitoring settings');
 });
 
 app.whenReady().then(boot);

@@ -55,9 +55,19 @@ def hid_dump_file(sd_file_path, hid_obj, missing_ok=False):
     duckypad_to_pc_buf = _read_response(hid_obj, "HID open file")
     status = duckypad_to_pc_buf[2]
     if status != 0:
+        # Firmware returns the raw FatFs FRESULT in byte 2 for open-for-read.
+        fatfs = {
+            1: "FR_DISK_ERR (SD I/O error)",
+            2: "FR_INT_ERR",
+            3: "FR_NOT_READY",
+            4: "FR_NO_FILE (missing)",
+            5: "FR_NO_PATH (missing folder)",
+            6: "FR_INVALID_NAME",
+            7: "FR_DENIED",
+        }.get(status, f"status {status}")
         if missing_ok and status in (4, 5):
             return None
-        raise OSError(f"HID open file for read failed: {status}")
+        raise OSError(f"HID open {sd_file_path} for read failed: {fatfs}")
 
     all_data = bytearray()
     while True:
@@ -122,14 +132,19 @@ def _dump_sd_once(dp_path, dump_dir_path, tk_root_obj, ui_text_obj):
         dp20_h = hid.device()
         dp20_h.open_path(dp_path)
         opened = True
-        profile_info = hid_dump_file(f"/{profile_info_dot_txt}", dp20_h)
-        save_to_file("", dump_dir_path, profile_info_dot_txt, profile_info)
-        for profile_name in _profile_names(profile_info):
-            _dump_profile(profile_name, dump_dir_path, dp20_h, tk_root_obj, ui_text_obj)
+        profile_info = hid_dump_file(f"/{profile_info_dot_txt}", dp20_h, missing_ok=True)
+        if profile_info is not None:
+            save_to_file("", dump_dir_path, profile_info_dot_txt, profile_info)
+            for profile_name in _profile_names(profile_info):
+                _dump_profile(profile_name, dump_dir_path, dp20_h, tk_root_obj, ui_text_obj)
 
         header = hid_dump_file(f"/{user_header_dot_txt}", dp20_h, missing_ok=True)
         if header is not None:
             save_to_file("", dump_dir_path, user_header_dot_txt, header)
+        try:
+            os.makedirs(dump_dir_path, exist_ok=True)
+        except OSError as exc:
+            raise LocalMirrorError(exc.errno, exc.strerror, exc.filename) from exc
     except OSError as exc:
         failure = exc
     finally:

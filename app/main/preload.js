@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld('core', {
   pickFolder: () => ipcRenderer.invoke('core:pickFolder'),
   openPath: (target) => ipcRenderer.invoke('core:openPath', target),
   openExternal: (target) => ipcRenderer.invoke('core:openExternal', target),
+  permissions: () => ipcRenderer.invoke('core:permissions'),
+  openInputMonitoring: () => ipcRenderer.invoke('core:openInputMonitoring'),
 });

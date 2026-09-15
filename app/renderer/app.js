@@ -2,7 +2,7 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const core = window.core;
-  const state = { session: null, profile: null, keySlot: null, release: false, devices: [], model: 'dp20', saveTimer: null, checkTimer: null, herdr: null, herdrRoot: null, palette: null, paletteDirty: false, paletteSaving: false, palettePath: '', paletteError: '' };
+  const state = { session: null, profile: null, keySlot: null, release: false, devices: [], model: 'dp20', saveTimer: null, checkTimer: null, herdr: null, herdrRoot: null, palette: null, paletteDirty: false, paletteSaving: false, palettePath: '', paletteError: '', scanAllowed: true };
   const HERDR_STATES = ['working', 'blocked', 'done', 'idle', 'unknown'];
   const DP20 = [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18];
   const HERDR_F9_SLOT = DP20[DP20.length - 1]; // physical key 15 = canonical slot 18
@@ -207,7 +207,46 @@
     } catch (_) { state.paletteError = 'Colors were not saved. Your edits are still here.'; }
     finally { state.paletteSaving = false; renderHerdr(); }
   }
+  function setScanAllowed(allowed) {
+    state.scanAllowed = allowed;
+    $('scan-button').disabled = !allowed;
+  }
+  function renderPermissions(result) {
+    const box = $('permission-checklist');
+    if (!box) return;
+    if (result.platform !== 'darwin') {
+      box.classList.add('hidden');
+      setScanAllowed(true);
+      return;
+    }
+    box.classList.remove('hidden');
+    const list = $('permission-items');
+    list.replaceChildren();
+    for (const item of result.items || []) {
+      const row = document.createElement('li');
+      row.className = item.ok ? 'ok' : (item.state === 'unknown' ? 'wait' : 'bad');
+      row.innerHTML = `<span class="mark">${item.ok ? 'OK' : 'NO'}</span><span>${escapeHtml(item.label)}<small>${escapeHtml(item.detail || '')}</small></span>`;
+      list.append(row);
+    }
+    setScanAllowed(Boolean(result.ready));
+    $('permission-status').textContent = result.ready
+      ? 'Permissions granted. You can scan for a duckyPad.'
+      : 'Grant Input Monitoring, click RECHECK. SCAN stays locked until this is OK.';
+  }
+  async function loadPermissions() {
+    if (!core || typeof core.permissions !== 'function') { setScanAllowed(true); return; }
+    try {
+      renderPermissions(await core.permissions());
+    } catch (error) {
+      renderPermissions({
+        platform: 'darwin',
+        ready: false,
+        items: [{ id: 'input-monitoring', label: 'Input Monitoring', detail: error.message || 'Could not check permissions', ok: false, state: 'unknown' }],
+      });
+    }
+  }
   async function connectScan() {
+    if (!state.scanAllowed) return;
     const result = await call('device/scan'); state.devices = result.devices || []; const list = $('device-list'); list.replaceChildren();
     if (!state.devices.length) {
       const messages = {
@@ -232,8 +271,10 @@
     });
   }
   function bind() {
-    $('connect-button').onclick = () => { show('no-device'); connectScan(); };
+    $('connect-button').onclick = async () => { show('no-device'); await loadPermissions(); if (state.scanAllowed) await connectScan(); };
     $('scan-button').onclick = connectScan; $('folder-button').onclick = () => $('model-picker').classList.remove('hidden');
+    $('permission-recheck').onclick = loadPermissions;
+    $('permission-settings').onclick = () => core.openInputMonitoring();
     document.querySelectorAll('[data-model]').forEach((button) => button.onclick = () => connectFolder(button.dataset.model));
     $('new-profile').onclick = async () => { const name = await requestProfileName('New profile'); if (name) await profileAction('profiles/create', { name }); };
     $('new-herdr-profile').onclick = async () => {
@@ -270,6 +311,7 @@
   async function boot() {
     bind(); if (!core) { show('no-device'); chip('ELECTRON REQUIRED', 'failed'); $('no-device-view').querySelector('.welcome-card').insertAdjacentHTML('afterbegin','<p class="toast">This UI runs inside the Electron app.</p>'); return; }
     try { await call('hello'); await refresh(); await refreshHerdr(); } catch (error) { show('no-device'); chip('CORE ERROR', 'failed'); toast(error.message || 'Cannot start core'); }
+    if (!$('no-device-view').classList.contains('hidden')) await loadPermissions();
   }
   boot();
 })();
