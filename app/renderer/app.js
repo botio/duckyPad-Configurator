@@ -162,14 +162,14 @@
     if (!supported) return;
     const canInstall = Boolean(status?.env?.cargo?.found && status.env.herdr?.found && status.env.plugin_repo);
     $('herdr-status').textContent = status?.env
-      ? `DFU: ${status.dfu?.verified === true ? 'verified' : 'not available'}\nInstall: ${canInstall ? 'ready' : 'unavailable'}`
-      : 'Bridge diagnostics unavailable. You can still create a profile and save its colors.';
+      ? `DFU: ${status.dfu?.verified === true ? 'verified' : 'not available'}\nInstall: ${canInstall ? 'ready' : 'unavailable'}\nBridge: colors/OLED only while the Herdr bridge service is running and this profile is selected on the pad.`
+      : 'Bridge diagnostics unavailable. Status colors still save to herdr.json; the Bridge must be running to push them to the pad.';
     $('herdr-install').disabled = !canInstall;
     $('herdr-flash').disabled = status?.dfu?.verified !== true;
     $('herdr-palette').disabled = !state.palette || state.paletteSaving;
     $('herdr-save-colors').disabled = !state.palette || !state.paletteDirty || state.paletteSaving;
     if (state.palette) for (const name of HERDR_STATES) $('herdr-color-' + name).value = colourHex(state.palette[name]);
-    $('herdr-color-status').textContent = state.paletteError || (state.paletteSaving ? 'Saving…' : state.paletteDirty ? 'Unsaved color changes' : state.palette ? 'Host-wide palette · the Bridge reloads colors automatically.' : 'Loading palette…');
+    $('herdr-color-status').textContent = state.paletteError || (state.paletteSaving ? 'Saving…' : state.paletteDirty ? 'Unsaved color changes' : state.palette ? 'Host-wide palette → Bridge reloads herdr.json (not profile SAVE).' : 'Loading palette…');
     $('herdr-color-status').title = state.palettePath;
   }
   async function refreshHerdr() {

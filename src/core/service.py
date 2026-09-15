@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.36"
+APP_VERSION = "5.0.37"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -734,9 +734,57 @@ class CoreService:
             raise CoreError(-32003, result.error_comment, {"line": result.error_line_number_starting_from_1, "message": result.error_comment})
         return bytes(result.bin_array)
 
+    def _refresh_device_hid_path(self, *, wait_s: float = 10.0, required: bool = True) -> None:
+        """Re-resolve info_dict['hid_path'] after USB re-enumeration.
+
+        DP20 SAVE ends with SW_RESET so the pad reloads profiles. On macOS the
+        HID path commonly changes after reboot; the next SAVE must not reuse the
+        stale path or open_path fails with 'no such device' / not found.
+
+        When required=False (pre-sync), keep the existing path if the device is
+        not listed yet — the current handle may still be valid.
+        """
+        info = self.device.info_dict
+        if not info:
+            if required:
+                raise CoreError(-32000, "No HID duckyPad is connected")
+            return
+        serial = info.get("serial")
+        if not serial:
+            return
+        deadline = time.monotonic() + wait_s
+        last_detail = "device not listed yet"
+        while True:
+            try:
+                found = hid_op.scan_duckypads() or []
+            except (ImportError, OSError) as exc:
+                last_detail = str(exc)
+                found = []
+            for item in found:
+                if item.get("serial") == serial:
+                    self.device.info_dict = item
+                    device_id = str(item.get("serial") or item.get("hid_path"))
+                    self._scanned_devices[device_id] = item
+                    return
+            if found:
+                last_detail = f"serial {serial} not among {len(found)} scanned device(s)"
+            # Pre-sync is best-effort: one miss keeps the existing path.
+            if not required:
+                return
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.35)
+        raise CoreError(
+            -32001,
+            "duckyPad did not reappear after save/reset — wait a few seconds and SAVE again, or SCAN to reconnect",
+            {"stage": "post_reset_scan", "detail": last_detail, "serial": serial},
+        )
+
     def _sync_dp20(self, temporary_write: Path) -> None:
         assert self.root_path is not None
         try:
+            # Best-effort: pick up a path left stale by a previous SAVE's reset.
+            self._refresh_device_hid_path(wait_s=1.5, required=False)
             my_compare.duckypad_file_sync(
                 str(self.root_path),
                 str(temporary_write),
@@ -746,19 +794,23 @@ class CoreService:
                 progress=lambda path: self.emit("event/profiles/save", {"phase": "transfer", "path": path}),
             )
             hid_op.duckypad_hid_sw_reset(self.device.info_dict)
-        except Exception as exc:
+            # Wait for re-enumeration so the next SAVE keeps a usable HID path.
+            self._refresh_device_hid_path(wait_s=12.0, required=True)
+        except CoreError:
+            raise
+        except Exception as exp:
             backup = str(temporary_write)
             fw = None
             if self.device.info_dict:
                 fw = self.device.info_dict.get("fw_version")
-            detail = str(exc)
+            detail = str(exp)
             if fw:
                 detail = f"{detail} (device firmware {fw})"
             raise CoreError(
                 -32001,
                 f"Failed to sync duckyPad 2020. Recovery backup saved to {backup}",
                 {"detail": detail, "backup_path": backup, "fw_version": fw},
-            ) from exc
+            ) from exp
 
     def profiles_export(self, names: list[str], dir: str) -> dict[str, Any]:
         self._require_session()

@@ -174,6 +174,23 @@ def check_service_recovery(root):
         assert transport.commands[-1] == HID_COMMAND_SW_RESET and not transport.access and transport.closed
         print('PASS successful service SAVE writes compiled backup bytes and resets to apply them')
 
+        # After SW_RESET the HID path often changes (macOS). The next SAVE must
+        # pick up the new path instead of open_path()'ing the stale one.
+        service.profiles_update('Fresh', {'key': {'index': 0, 'name': 'AGAIN', 'script': 'STRING second'}})
+        live = {'hid_path': b'path-after-reset', 'serial': 'TEST', 'dp_model': 20, 'fw_version': '3.1.16'}
+        service.device.info_dict = {**live, 'hid_path': b'stale-after-reset'}
+        opened = []
+        class TrackingDevice(SaveDevice):
+            def open_path(self, path):
+                opened.append(path)
+                return super().open_path(path)
+        transport = TrackingDevice()
+        with patch.object(hid_op.hid, 'device', return_value=transport), patch.object(hid_op, 'scan_duckypads', return_value=[live]), patch.object(hid_common.time, 'monotonic', transport.monotonic):
+            service.profiles_save()
+        assert opened and opened[0] == b'path-after-reset', f'second SAVE reused a stale HID path: {opened!r}'
+        assert service.device.info_dict['hid_path'] == b'path-after-reset', 'session hid_path was not refreshed after SAVE'
+        print('PASS second HID SAVE follows the post-reset path rotation')
+
         before = {path: snapshot(path) for path in backups.iterdir()}
         old_mirror = snapshot(mirror)
         service.profiles_update('Fresh', {'key': {'index': 0, 'script': 'PRINT hello'}})
