@@ -160,16 +160,30 @@
     const supported = state.session?.connected && state.session.model === 'dp20';
     panel.classList.toggle('hidden', !supported);
     if (!supported) return;
-    const canInstall = Boolean(status?.env?.cargo?.found && status.env.herdr?.found && status.env.plugin_repo);
+    const canInstall = Boolean(status?.env?.cargo?.found && status.env.herdr?.found && (status.env.plugin_repo || status.plugin?.repo));
+    const bridgeRunning = Boolean(status?.bridge?.service_running || status?.plugin?.service_ok || status?.env?.service_running);
+    const socketOk = Boolean(status?.bridge?.socket_ok || status?.env?.herdr_socket_ok);
+    const socketPath = status?.bridge?.socket_path || status?.env?.herdr_socket || '';
+    const notes = (status?.notes || status?.env?.notes || []).slice(0, 3).join('\n');
     $('herdr-status').textContent = status?.env
-      ? `DFU: ${status.dfu?.verified === true ? 'verified' : 'not available'}\nInstall: ${canInstall ? 'ready' : 'unavailable'}\nBridge: colors/OLED only while the Herdr bridge service is running and this profile is selected on the pad.`
-      : 'Bridge diagnostics unavailable. Status colors still save to herdr.json; the Bridge must be running to push them to the pad.';
+      ? [
+          `herdr CLI: ${status.env.herdr?.found ? (status.env.herdr.version || 'found') : 'MISSING'}`,
+          `Bridge service: ${bridgeRunning ? 'running' : 'not detected'}`,
+          `herdr.sock: ${socketOk ? 'OK' : 'MISSING — start herdr'}`,
+          socketPath ? `  ${socketPath}` : '',
+          `Plugin repo: ${status.env.plugin_repo || status.plugin?.repo || 'not found'}`,
+          `Install tools: ${canInstall ? 'ready' : 'unavailable'}`,
+          `DFU image: ${status.dfu?.verified === true ? 'verified' : 'not available'}`,
+          notes,
+          'Colors/OLED need: herdr running + Bridge running + Herdr profile selected on the pad.',
+        ].filter(Boolean).join('\n')
+      : (status?.detail || 'Bridge diagnostics unavailable. Status colors still save to herdr.json.');
     $('herdr-install').disabled = !canInstall;
     $('herdr-flash').disabled = status?.dfu?.verified !== true;
     $('herdr-palette').disabled = !state.palette || state.paletteSaving;
     $('herdr-save-colors').disabled = !state.palette || !state.paletteDirty || state.paletteSaving;
     if (state.palette) for (const name of HERDR_STATES) $('herdr-color-' + name).value = colourHex(state.palette[name]);
-    $('herdr-color-status').textContent = state.paletteError || (state.paletteSaving ? 'Saving…' : state.paletteDirty ? 'Unsaved color changes' : state.palette ? 'Host-wide palette → Bridge reloads herdr.json (not profile SAVE).' : 'Loading palette…');
+    $('herdr-color-status').textContent = state.paletteError || (state.paletteSaving ? 'Saving…' : state.paletteDirty ? 'Unsaved color changes' : state.palette ? (socketOk && bridgeRunning ? 'Host-wide palette → Bridge reloads herdr.json.' : 'Palette saved on disk; start herdr + Bridge before lights update.') : 'Loading palette…');
     $('herdr-color-status').title = state.palettePath;
   }
   async function refreshHerdr() {

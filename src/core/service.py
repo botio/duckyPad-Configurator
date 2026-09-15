@@ -39,7 +39,7 @@ from shared import (
     user_header_source_tag_NO_SPACE,
     zip_directory,
 )
-APP_VERSION = "5.0.37"
+APP_VERSION = "5.0.38"
 DP20_SLOTS = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 16, 17, 18)
 DP20_SLOT_TO_DEVICE = {slot: index + 1 for index, slot in enumerate(DP20_SLOTS)}
 
@@ -911,9 +911,24 @@ class CoreService:
             status = herdr.herdr_status()
             env = _jsonable(status.env)
             config = _jsonable(status.config)
-            return _result(env=env, plugin={"installed": None, "version": None, "service_ok": None}, config=config, dfu={"verified": status.herdr_dfu_verified})
+            return _result(
+                env=env,
+                plugin={
+                    "installed": bool(status.env.plugin_installed),
+                    "service_ok": bool(status.env.service_running),
+                    "repo": str(status.env.plugin_repo) if status.env.plugin_repo else None,
+                },
+                bridge={
+                    "socket_path": str(status.env.herdr_socket) if status.env.herdr_socket else None,
+                    "socket_ok": bool(status.env.herdr_socket_ok),
+                    "service_running": bool(status.env.service_running),
+                },
+                config=config,
+                dfu={"verified": status.herdr_dfu_verified},
+                notes=list(status.env.notes),
+            )
         except Exception as exc:
-            return _result(env=None, plugin=None, config=None, dfu=None, unavailable=True, detail=str(exc))
+            return _result(env=None, plugin=None, bridge=None, config=None, dfu=None, unavailable=True, detail=str(exc))
 
     def herdr_install(self) -> dict[str, Any]:
         logs: list[str] = []
